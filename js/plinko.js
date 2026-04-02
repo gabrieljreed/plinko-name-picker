@@ -2,10 +2,11 @@
 import { getNameHue } from './names.js';
 
 const PEG_RADIUS = 5;
-const BALL_RADIUS = 9;
+const BALL_RADIUS = 20;
 const SLOT_HEIGHT = 48;
 const PAD = { top: 28, right: 24, bottom: 10, left: 24 };
-const DROP_DURATION_MS = 900; // total animation time
+const DROP_DURATION_MS = 2500; // total animation time for motion
+const PAUSE_MS = 100; // pause on each peg before moving
 
 // ── Pure path logic (unit-tested) ─────────────────────────────────────────────
 
@@ -40,10 +41,10 @@ export function gapToSlot(gap, pegRows, slotCount) {
  */
 export function pathToWaypoints(path) {
   const waypoints = [];
-  let col = 0;
+  let gap = 0;
   for (let row = 0; row < path.length; row++) {
-    waypoints.push({ row, col });
-    col += path[row];
+    gap += path[row];
+    waypoints.push({ row, gap });
   }
   return waypoints;
 }
@@ -165,7 +166,7 @@ export function drawBoard(canvas, slotLabels, colorKeys = slotLabels) {
 export function dropBall(canvas, slotLabels, colorKeys = slotLabels, onLand) {
   const ctx = canvas.getContext('2d');
   const layout = computeLayout(canvas.width, canvas.height, slotLabels.length);
-  const { pegRows, pegs, slots, boardX, boardY, boardW } = layout;
+  const { pegRows, pegs, slots, colSpacing, boardX, boardY, boardW } = layout;
 
   const path = computePath(pegRows);
   const waypoints = pathToWaypoints(path);
@@ -173,9 +174,15 @@ export function dropBall(canvas, slotLabels, colorKeys = slotLabels, onLand) {
   const winnerSlotIdx = gapToSlot(gap, pegRows, slotLabels.length);
 
   // Build the list of (x, y) positions the ball travels through
-  function pegPos(row, col) {
-    const p = pegs.find(p => p.row === row && p.col === col);
-    return { x: p.x, y: p.y };
+  function gapPos(row, gap) {
+    const rowPegs = pegs.filter(p => p.row === row);
+    if (!rowPegs.length) {
+      return { x: boardX + boardW / 2, y: boardY };
+    }
+    const firstX = rowPegs[0].x;
+    const x = firstX + (gap - 0.5) * colSpacing;
+    const y = rowPegs[0].y;
+    return { x, y };
   }
 
   // x position of the winning slot center
@@ -185,14 +192,16 @@ export function dropBall(canvas, slotLabels, colorKeys = slotLabels, onLand) {
   const positions = [
     // Start: above the board, centered
     { x: boardX + boardW / 2, y: boardY - BALL_RADIUS },
-    // Each peg hit
-    ...waypoints.map(wp => pegPos(wp.row, wp.col)),
+    // Path through gaps (between pegs)
+    ...waypoints.map(wp => gapPos(wp.row, wp.gap)),
     // Land in the winning slot
     { x: finalX, y: finalY },
   ];
 
   const segCount = positions.length - 1;
-  const segDuration = DROP_DURATION_MS / segCount;
+  const moveDuration = DROP_DURATION_MS / segCount;
+  const segmentDuration = PAUSE_MS + moveDuration;
+  const totalDuration = segmentDuration * segCount;
 
   let rafId;
   let startTime = null;
@@ -205,15 +214,25 @@ export function dropBall(canvas, slotLabels, colorKeys = slotLabels, onLand) {
     if (startTime === null) startTime = ts;
     const elapsed = ts - startTime;
 
-    // Which segment are we in?
-    const segIndex = Math.min(Math.floor(elapsed / segDuration), segCount - 1);
-    const segT = Math.min((elapsed - segIndex * segDuration) / segDuration, 1);
-    const t = easeInOut(segT);
+    // Which segment are we in? Each segment has a brief pause then move.
+    const segIndex = Math.min(Math.floor(elapsed / segmentDuration), segCount - 1);
+    const segElapsed = Math.min(elapsed - segIndex * segmentDuration, segmentDuration);
 
     const from = positions[segIndex];
     const to = positions[segIndex + 1];
-    const bx = from.x + (to.x - from.x) * t;
-    const by = from.y + (to.y - from.y) * t;
+
+    let bx;
+    let by;
+    if (segElapsed < PAUSE_MS) {
+      // Hesitate on peg
+      bx = from.x;
+      by = from.y;
+    } else {
+      const moveT = Math.min((segElapsed - PAUSE_MS) / moveDuration, 1);
+      const t = easeInOut(moveT);
+      bx = from.x + (to.x - from.x) * t;
+      by = from.y + (to.y - from.y) * t;
+    }
 
     // Determine winner highlight only on last segment
     const highlightSlot = segIndex === segCount - 1 ? winnerSlotIdx : -1;
@@ -232,7 +251,7 @@ export function dropBall(canvas, slotLabels, colorKeys = slotLabels, onLand) {
     ctx.fillStyle = 'rgba(255,255,255,0.4)';
     ctx.fill();
 
-    if (elapsed < DROP_DURATION_MS) {
+    if (elapsed < totalDuration) {
       rafId = requestAnimationFrame(frame);
     } else {
       // Final frame: full highlight, no ball

@@ -54,19 +54,19 @@ test('returns one waypoint per peg row', () => {
   assert.equal(wp.length, 6);
 });
 
-test('first waypoint is always at col 0', () => {
+test('first waypoint reflects first decision', () => {
   const wp = pathToWaypoints([1, 1, 1, 1]);
-  assert.equal(wp[0].col, 0);
+  assert.equal(wp[0].gap, 1);
 });
 
-test('all-left path keeps col at 0 throughout', () => {
+test('all-left path keeps gap at 0 throughout', () => {
   const wp = pathToWaypoints([0, 0, 0, 0]);
-  assert.ok(wp.every(p => p.col === 0));
+  assert.ok(wp.every(p => p.gap === 0));
 });
 
-test('all-right path increments col by 1 each row', () => {
+test('all-right path increments gap by 1 each row', () => {
   const wp = pathToWaypoints([1, 1, 1, 1]);
-  wp.forEach((p, i) => assert.equal(p.col, i));
+  wp.forEach((p, i) => assert.equal(p.gap, i + 1));
 });
 
 test('waypoint row matches its index', () => {
@@ -75,10 +75,10 @@ test('waypoint row matches its index', () => {
 });
 
 test('mixed path accumulates correctly', () => {
-  // path [0,1,0,1]: cols should be 0, 0, 1, 1
+  // path [0,1,0,1]: gaps should be 0, 1, 1, 2
   const wp = pathToWaypoints([0, 1, 0, 1]);
-  assert.equal(wp[0].col, 0);
-  assert.equal(wp[1].col, 0);
-  assert.equal(wp[2].col, 1);
-  assert.equal(wp[3].col, 1);
+  assert.equal(wp[0].gap, 0);
+  assert.equal(wp[1].gap, 1);
+  assert.equal(wp[2].gap, 1);
+  assert.equal(wp[3].gap, 2);
 });
