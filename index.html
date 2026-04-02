@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Plinko Name Picker</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div id="app">
+    <header>
+      <h1>Plinko Name Picker</h1>
+    </header>
+
+    <main>
+      <div id="board-container">
+        <canvas id="plinko-canvas"></canvas>
+      </div>
+
+      <section id="controls">
+        <label for="name-input">
+          Names <span id="name-count"></span>
+        </label>
+        <textarea
+          id="name-input"
+          placeholder="Enter names, one per line..."
+          rows="6"
+          spellcheck="false"
+        ></textarea>
+        <button id="drop-btn" disabled>Drop!</button>
+      </section>
+    </main>
+  </div>
+
+  <!-- Winner Modal -->
+  <div id="modal-overlay" class="hidden">
+    <div id="modal">
+      <p id="modal-winner-text"></p>
+      <div id="modal-buttons">
+        <button id="modal-cancel">Cancel</button>
+        <button id="modal-ok" autofocus>OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Game Over Screen -->
+  <div id="gameover-overlay" class="hidden">
+    <div id="gameover">
+      <h2>All done!</h2>
+      <p id="gameover-text"></p>
+      <button id="gameover-restart">Start Over</button>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
