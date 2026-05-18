@@ -1,6 +1,6 @@
 import { setNamesFromText, getNames, getCount, remove } from './names.js';
-import { renderNameCount, syncTextarea, showWinnerModal, hideWinnerModal, showGameOver, hideGameOver, toggleSettingsPanel, closeSettingsPanel, isSettingsPanelOpen, isPhysicsMode, setPhysicsMode } from './ui.js';
-import { drawBoard, dropBall, dropBallPhysics } from './plinko.js';
+import { renderNameCount, syncTextarea, showWinnerModal, hideWinnerModal, showGameOver, hideGameOver, toggleSettingsPanel, closeSettingsPanel, isSettingsPanelOpen, isPhysicsMode, setPhysicsMode, getBallSizeValue, setBallSizeValue } from './ui.js';
+import { drawBoard, dropBall, dropBallPhysics, setBallRadius } from './plinko.js';
 
 const textarea  = document.getElementById('name-input');
 const canvas    = document.getElementById('plinko-canvas');
@@ -102,6 +102,7 @@ document.addEventListener('keydown', (e) => {
 
 const STORAGE_KEY = 'plinko-names';
 const PHYSICS_STORAGE_KEY = 'plinko-physics-mode';
+const BALL_SIZE_STORAGE_KEY = 'plinko-ball-size';
 
 function saveNames() {
   localStorage.setItem(STORAGE_KEY, textarea.value);
@@ -114,6 +115,14 @@ function loadNames() {
 
 function loadPhysicsMode() {
   setPhysicsMode(localStorage.getItem(PHYSICS_STORAGE_KEY) === 'true');
+}
+
+function loadBallSize() {
+  const saved = parseInt(localStorage.getItem(BALL_SIZE_STORAGE_KEY), 10);
+  if (!isNaN(saved)) {
+    setBallSizeValue(saved);
+    setBallRadius(saved);
+  }
 }
 
 textarea.addEventListener('input', () => { saveNames(); render(); });
@@ -131,6 +140,14 @@ document.getElementById('physics-toggle').addEventListener('change', () => {
   localStorage.setItem(PHYSICS_STORAGE_KEY, isPhysicsMode());
 });
 
+document.getElementById('ball-size-slider').addEventListener('input', () => {
+  const val = getBallSizeValue();
+  setBallSizeValue(val);   // keeps the displayed number in sync
+  setBallRadius(val);
+  localStorage.setItem(BALL_SIZE_STORAGE_KEY, val);
+  render();
+});
+
 // Close settings panel when clicking outside it
 document.addEventListener('click', (e) => {
   if (isSettingsPanelOpen()
@@ -144,4 +161,5 @@ new ResizeObserver(render).observe(container);
 
 loadNames();
 loadPhysicsMode();
+loadBallSize();
 render();

@@ -2,7 +2,7 @@
 import { getNameHue } from './names.js';
 
 const PEG_RADIUS = 5;
-const BALL_RADIUS = 30;
+let ballRadius = 30;
 const SLOT_HEIGHT = 48;
 const PAD = { top: 28, right: 24, bottom: 10, left: 24 };
 const DROP_DURATION_MS = 2500; // total animation time for motion
@@ -13,6 +13,12 @@ const GRAVITY        = 0.0012;  // px/ms²
 const RESTITUTION    = 0.78;    // peg bounce coefficient (bouncy/chaotic)
 const WALL_RESTITUTION = 0.6;   // outer-wall bounce coefficient
 const PHYSICS_MAX_MS = 8000;    // fallback settle timeout
+
+/** Get the current ball radius (px). */
+export function getBallRadius() { return ballRadius; }
+
+/** Set the ball radius used for drawing and physics (px). Min 4, max 60. */
+export function setBallRadius(r) { ballRadius = Math.max(4, Math.min(60, r)); }
 
 // ── Pure path logic (unit-tested) ─────────────────────────────────────────────
 
@@ -87,19 +93,19 @@ export function stepBall(ball, pegs, wallLeft, wallRight, dt) {
   y += vy * dt;
 
   // Left wall
-  if (x - BALL_RADIUS < wallLeft) {
-    x = wallLeft + BALL_RADIUS;
+  if (x - ballRadius < wallLeft) {
+    x = wallLeft + ballRadius;
     vx = Math.abs(vx) * WALL_RESTITUTION;
   }
 
   // Right wall
-  if (x + BALL_RADIUS > wallRight) {
-    x = wallRight - BALL_RADIUS;
+  if (x + ballRadius > wallRight) {
+    x = wallRight - ballRadius;
     vx = -Math.abs(vx) * WALL_RESTITUTION;
   }
 
   // Peg collisions
-  const minDist = BALL_RADIUS + PEG_RADIUS;
+  const minDist = ballRadius + PEG_RADIUS;
   for (const peg of pegs) {
     const dx = x - peg.x;
     const dy = y - peg.y;
@@ -273,11 +279,11 @@ export function dropBall(canvas, slotLabels, colorKeys = slotLabels, onLand) {
 
   // x position of the winning slot center
   const finalX = slots[winnerSlotIdx].cx;
-  const finalY = slots[winnerSlotIdx].y - BALL_RADIUS - 2;
+  const finalY = slots[winnerSlotIdx].y - ballRadius - 2;
 
   const positions = [
     // Start: above the board, centered
-    { x: boardX + boardW / 2, y: boardY - BALL_RADIUS },
+    { x: boardX + boardW / 2, y: boardY - ballRadius },
     // Path through gaps (between pegs)
     ...waypoints.map(wp => gapPos(wp.row, wp.gap)),
     // Land in the winning slot
@@ -329,11 +335,11 @@ export function dropBall(canvas, slotLabels, colorKeys = slotLabels, onLand) {
 
     // Ball
     ctx.beginPath();
-    ctx.arc(bx, by, BALL_RADIUS, 0, Math.PI * 2);
+    ctx.arc(bx, by, ballRadius, 0, Math.PI * 2);
     ctx.fillStyle = '#e94560';
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(bx - 3, by - 3, BALL_RADIUS * 0.35, 0, Math.PI * 2);
+    ctx.arc(bx - 3, by - 3, ballRadius * 0.35, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(255,255,255,0.4)';
     ctx.fill();
 
@@ -377,7 +383,7 @@ export function dropBallPhysics(canvas, slotLabels, colorKeys = slotLabels, onLa
 
   // Initial ball state: top-center with a small random horizontal nudge
   const initX = boardX + boardW / 2 + (Math.random() - 0.5) * slotW * 0.5;
-  let ball = createBallState(initX, boardY - BALL_RADIUS, (Math.random() - 0.5) * 0.05, 0);
+  let ball = createBallState(initX, boardY - ballRadius, (Math.random() - 0.5) * 0.05, 0);
 
   let rafId;
   let prevTs = null;
@@ -386,11 +392,11 @@ export function dropBallPhysics(canvas, slotLabels, colorKeys = slotLabels, onLa
 
   function drawBall(bx, by) {
     ctx.beginPath();
-    ctx.arc(bx, by, BALL_RADIUS, 0, Math.PI * 2);
+    ctx.arc(bx, by, ballRadius, 0, Math.PI * 2);
     ctx.fillStyle = '#e94560';
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(bx - 3, by - 3, BALL_RADIUS * 0.35, 0, Math.PI * 2);
+    ctx.arc(bx - 3, by - 3, ballRadius * 0.35, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(255,255,255,0.4)';
     ctx.fill();
   }
@@ -401,9 +407,9 @@ export function dropBallPhysics(canvas, slotLabels, colorKeys = slotLabels, onLa
     let { x, y, vx, vy } = b;
     for (const dx of dividers) {
       const dist = Math.abs(x - dx);
-      if (dist < BALL_RADIUS) {
+      if (dist < ballRadius) {
         // Push ball away from divider
-        x = x < dx ? dx - BALL_RADIUS : dx + BALL_RADIUS;
+        x = x < dx ? dx - ballRadius : dx + ballRadius;
         vx = (x < dx ? -1 : 1) * Math.abs(vx) * WALL_RESTITUTION;
       }
     }

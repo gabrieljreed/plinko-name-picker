@@ -9,6 +9,8 @@ const gameoverOverlay = document.getElementById('gameover-overlay');
 const gameoverText   = document.getElementById('gameover-text');
 const settingsPanel  = document.getElementById('settings-panel');
 const physicsToggle  = document.getElementById('physics-toggle');
+const ballSizeSlider = document.getElementById('ball-size-slider');
+const ballSizeValueEl = document.getElementById('ball-size-value');
 
 /** Update the "(N)" count label and enable/disable the Drop button. */
 export function renderNameCount(count) {
@@ -77,4 +79,15 @@ export function isPhysicsMode() {
 /** Set the physics mode toggle state. */
 export function setPhysicsMode(enabled) {
   physicsToggle.checked = enabled;
+}
+
+/** Returns the current ball size slider value as a number. */
+export function getBallSizeValue() {
+  return parseInt(ballSizeSlider.value, 10);
+}
+
+/** Set the ball size slider and its displayed value. */
+export function setBallSizeValue(n) {
+  ballSizeSlider.value = n;
+  ballSizeValueEl.textContent = n;
 }
