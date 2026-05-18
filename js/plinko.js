@@ -233,6 +233,17 @@ function drawSlots(ctx, slots, slotLabels, winnerSlot = -1, colorKeys = slotLabe
   }
 }
 
+function drawBallAt(ctx, bx, by) {
+  ctx.beginPath();
+  ctx.arc(bx, by, ballRadius, 0, Math.PI * 2);
+  ctx.fillStyle = '#e94560';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(bx - 3, by - 3, ballRadius * 0.35, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.fill();
+}
+
 /**
  * Draw the static board (no ball). Called between rounds.
  */
@@ -333,15 +344,7 @@ export function dropBall(canvas, slotLabels, colorKeys = slotLabels, onLand) {
     drawPegs(ctx, pegs);
     drawSlots(ctx, slots, slotLabels, highlightSlot, colorKeys);
 
-    // Ball
-    ctx.beginPath();
-    ctx.arc(bx, by, ballRadius, 0, Math.PI * 2);
-    ctx.fillStyle = '#e94560';
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(bx - 3, by - 3, ballRadius * 0.35, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.4)';
-    ctx.fill();
+    drawBallAt(ctx, bx, by);
 
     if (elapsed < totalDuration) {
       rafId = requestAnimationFrame(frame);
@@ -365,7 +368,7 @@ export function dropBall(canvas, slotLabels, colorKeys = slotLabels, onLand) {
  * The winner is determined by which slot the ball physically settles into.
  * Same signature as dropBall — returns a cancel function.
  */
-export function dropBallPhysics(canvas, slotLabels, colorKeys = slotLabels, onLand) {
+export function dropBallPhysics(canvas, slotLabels, colorKeys = slotLabels, onLand, initState = null) {
   const ctx = canvas.getContext('2d');
   const layout = computeLayout(canvas.width, canvas.height, slotLabels.length);
   const { pegs, slots, boardX, boardY, boardW } = layout;
@@ -381,25 +384,18 @@ export function dropBallPhysics(canvas, slotLabels, colorKeys = slotLabels, onLa
     dividers.push(boardX + i * slotW);
   }
 
-  // Initial ball state: top-center with a small random horizontal nudge
-  const initX = boardX + boardW / 2 + (Math.random() - 0.5) * slotW * 0.5;
-  let ball = createBallState(initX, boardY - ballRadius, (Math.random() - 0.5) * 0.05, 0);
+  // Initial ball state: use provided initState (from aiming mode) or default to top-center
+  let ball = initState ?? createBallState(
+    boardX + boardW / 2 + (Math.random() - 0.5) * slotW * 0.5,
+    boardY - ballRadius,
+    (Math.random() - 0.5) * 0.05,
+    0
+  );
 
   let rafId;
   let prevTs = null;
   let startTs = null;
   let settled = false;
-
-  function drawBall(bx, by) {
-    ctx.beginPath();
-    ctx.arc(bx, by, ballRadius, 0, Math.PI * 2);
-    ctx.fillStyle = '#e94560';
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(bx - 3, by - 3, ballRadius * 0.35, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.4)';
-    ctx.fill();
-  }
 
   function resolveSlotWalls(b) {
     // Only apply slot-divider collisions once ball is in the slot zone
@@ -454,7 +450,7 @@ export function dropBallPhysics(canvas, slotLabels, colorKeys = slotLabels, onLa
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawPegs(ctx, pegs);
     drawSlots(ctx, slots, slotLabels, highlightSlot, colorKeys);
-    drawBall(ball.x, ball.y);
+    drawBallAt(ctx, ball.x, ball.y);
 
     if (!settled) {
       rafId = requestAnimationFrame(frame);
@@ -463,5 +459,57 @@ export function dropBallPhysics(canvas, slotLabels, colorKeys = slotLabels, onLa
 
   rafId = requestAnimationFrame(frame);
   return () => { settled = true; cancelAnimationFrame(rafId); };
+}
+
+// ── Aiming oscillation ────────────────────────────────────────────────────────
+
+/**
+ * Show the ball swaying back and forth at the top of the board before a drop.
+ * speedFactor > 1 makes the ball faster (use to increase tension as names shrink).
+ *
+ * Returns { cancel(), getBallState() }.
+ * getBallState() returns { x, y, vx, vy } — snapshot the moment Drop is clicked.
+ */
+export function startOscillation(canvas, slotLabels, colorKeys = slotLabels, speedFactor = 1) {
+  const ctx = canvas.getContext('2d');
+  const layout = computeLayout(canvas.width, canvas.height, slotLabels.length);
+  const { pegs, slots, boardX, boardY, boardW } = layout;
+
+  const minX = boardX + ballRadius;
+  const maxX = boardX + boardW - ballRadius;
+  // Base speed: one full board-width crossing in ~1500 ms
+  const speed = (boardW / 1500) * Math.max(1, speedFactor); // px/ms
+
+  const by = boardY; // top of board area — ball is visible here
+  let bx = boardX + boardW / 2;
+  let vx = speed; // start moving right
+
+  let rafId;
+  let prevTs = null;
+  let cancelled = false;
+
+  function frame(ts) {
+    if (cancelled) return;
+    if (prevTs === null) prevTs = ts;
+    const dt = Math.min(ts - prevTs, 32);
+    prevTs = ts;
+
+    bx += vx * dt;
+    if (bx <= minX) { bx = minX; vx =  Math.abs(vx); }
+    if (bx >= maxX) { bx = maxX; vx = -Math.abs(vx); }
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawPegs(ctx, pegs);
+    drawSlots(ctx, slots, slotLabels, -1, colorKeys);
+    drawBallAt(ctx, bx, by);
+
+    rafId = requestAnimationFrame(frame);
+  }
+
+  function getBallState() { return { x: bx, y: by, vx, vy: 0 }; }
+  function cancel() { cancelled = true; cancelAnimationFrame(rafId); }
+
+  rafId = requestAnimationFrame(frame);
+  return { cancel, getBallState };
 }
 

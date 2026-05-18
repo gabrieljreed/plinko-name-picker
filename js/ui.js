@@ -9,6 +9,7 @@ const gameoverOverlay = document.getElementById('gameover-overlay');
 const gameoverText   = document.getElementById('gameover-text');
 const settingsPanel  = document.getElementById('settings-panel');
 const physicsToggle  = document.getElementById('physics-toggle');
+const aimingToggle   = document.getElementById('aiming-toggle');
 const ballSizeSlider = document.getElementById('ball-size-slider');
 const ballSizeValueEl = document.getElementById('ball-size-value');
 
@@ -79,6 +80,16 @@ export function isPhysicsMode() {
 /** Set the physics mode toggle state. */
 export function setPhysicsMode(enabled) {
   physicsToggle.checked = enabled;
+}
+
+/** Returns true if aiming mode is enabled. */
+export function isAimingMode() {
+  return aimingToggle.checked;
+}
+
+/** Set the aiming mode toggle state. */
+export function setAimingMode(enabled) {
+  aimingToggle.checked = enabled;
 }
 
 /** Returns the current ball size slider value as a number. */

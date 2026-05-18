@@ -1,6 +1,6 @@
 import { setNamesFromText, getNames, getCount, remove } from './names.js';
-import { renderNameCount, syncTextarea, showWinnerModal, hideWinnerModal, showGameOver, hideGameOver, toggleSettingsPanel, closeSettingsPanel, isSettingsPanelOpen, isPhysicsMode, setPhysicsMode, getBallSizeValue, setBallSizeValue } from './ui.js';
-import { drawBoard, dropBall, dropBallPhysics, setBallRadius } from './plinko.js';
+import { renderNameCount, syncTextarea, showWinnerModal, hideWinnerModal, showGameOver, hideGameOver, toggleSettingsPanel, closeSettingsPanel, isSettingsPanelOpen, isPhysicsMode, setPhysicsMode, isAimingMode, setAimingMode, getBallSizeValue, setBallSizeValue } from './ui.js';
+import { drawBoard, dropBall, dropBallPhysics, setBallRadius, startOscillation } from './plinko.js';
 
 const textarea  = document.getElementById('name-input');
 const canvas    = document.getElementById('plinko-canvas');
@@ -12,6 +12,7 @@ const modalCancel = document.getElementById('modal-cancel');
 const gameoverRestart = document.getElementById('gameover-restart');
 
 let cancelDrop = null;
+let oscillationHandle = null;
 let currentSlotNames = [];
 let stableSlotNames = [];   // color source — only updated on count change or at drop time
 let slotIndices = [];       // shuffled indices into getNames(); only reshuffled when count changes
@@ -41,7 +42,20 @@ function render() {
     stableSlotNames = slotIndices.map(i => getNames()[i]);
   }
   currentSlotNames = slotIndices.map(i => getNames()[i]);
-  drawBoard(canvas, currentSlotNames, stableSlotNames);
+
+  // Cancel any existing oscillation before redrawing
+  if (oscillationHandle) {
+    oscillationHandle.cancel();
+    oscillationHandle = null;
+  }
+
+  if (getCount() > 0 && isAimingMode() && !cancelDrop) {
+    const eliminated = originalNames ? (originalNames.length - getCount()) : 0;
+    const speedFactor = Math.min(4, 1 + eliminated * 0.25);
+    oscillationHandle = startOscillation(canvas, currentSlotNames, stableSlotNames, speedFactor);
+  } else {
+    drawBoard(canvas, currentSlotNames, stableSlotNames);
+  }
 }
 
 function onDrop() {
@@ -52,12 +66,22 @@ function onDrop() {
   dropBtn.disabled = true;
   textarea.disabled = true;
 
-  const dropFn = isPhysicsMode() ? dropBallPhysics : dropBall;
+  // Capture ball position from oscillation before cancelling it
+  let initState = null;
+  if (oscillationHandle) {
+    initState = oscillationHandle.getBallState();
+    oscillationHandle.cancel();
+    oscillationHandle = null;
+  }
+
+  // Aiming mode forces physics so the starting position actually matters
+  const usePhysics = isPhysicsMode() || (isAimingMode() && initState !== null);
+  const dropFn = usePhysics ? dropBallPhysics : dropBall;
   cancelDrop = dropFn(canvas, currentSlotNames, stableSlotNames, (winnerName) => {
     cancelDrop = null;
     pendingWinner = winnerName;
     showWinnerModal(winnerName);
-  });
+  }, initState);
 }
 
 function onOK() {
@@ -102,6 +126,7 @@ document.addEventListener('keydown', (e) => {
 
 const STORAGE_KEY = 'plinko-names';
 const PHYSICS_STORAGE_KEY = 'plinko-physics-mode';
+const AIMING_STORAGE_KEY  = 'plinko-aiming-mode';
 const BALL_SIZE_STORAGE_KEY = 'plinko-ball-size';
 
 function saveNames() {
@@ -115,6 +140,10 @@ function loadNames() {
 
 function loadPhysicsMode() {
   setPhysicsMode(localStorage.getItem(PHYSICS_STORAGE_KEY) === 'true');
+}
+
+function loadAimingMode() {
+  setAimingMode(localStorage.getItem(AIMING_STORAGE_KEY) === 'true');
 }
 
 function loadBallSize() {
@@ -140,6 +169,11 @@ document.getElementById('physics-toggle').addEventListener('change', () => {
   localStorage.setItem(PHYSICS_STORAGE_KEY, isPhysicsMode());
 });
 
+document.getElementById('aiming-toggle').addEventListener('change', () => {
+  localStorage.setItem(AIMING_STORAGE_KEY, isAimingMode());
+  render(); // start or stop oscillation immediately
+});
+
 document.getElementById('ball-size-slider').addEventListener('input', () => {
   const val = getBallSizeValue();
   setBallSizeValue(val);   // keeps the displayed number in sync
@@ -161,5 +195,6 @@ new ResizeObserver(render).observe(container);
 
 loadNames();
 loadPhysicsMode();
+loadAimingMode();
 loadBallSize();
 render();
