@@ -12,7 +12,9 @@ const PAUSE_MS = 100; // pause on each peg before moving
 const GRAVITY        = 0.0012;  // px/ms²
 const RESTITUTION    = 0.78;    // peg bounce coefficient (bouncy/chaotic)
 const WALL_RESTITUTION = 0.6;   // outer-wall bounce coefficient
-const PHYSICS_MAX_MS = 8000;    // fallback settle timeout
+const PHYSICS_MAX_MS    = 15000; // absolute hard-cap (safety net only)
+const IDLE_SPEED_THRESH = 0.10;  // px/ms — below this the ball is considered idle
+const IDLE_SETTLE_MS    = 800;   // settle after being idle this long (ms)
 const PAD_BOOST      = 1.4;     // speed amplification factor on pad bounce
 const PAD_DRAW_WIDTH = 10;       // drawing stroke width in px
 let bumperPadsEnabled = true;   // toggled at runtime via setBumperPads()
@@ -535,9 +537,10 @@ export function dropBallPhysics(canvas, slotLabels, colorKeys = slotLabels, onLa
   );
 
   let rafId;
-  let prevTs = null;
-  let startTs = null;
-  let settled = false;
+  let prevTs   = null;
+  let startTs  = null;
+  let settled  = false;
+  let idleStart = null; // timestamp when ball speed first dropped below threshold
 
   function resolveSlotWalls(b) {
     // Only apply slot-divider collisions once ball is in the slot zone
@@ -582,8 +585,18 @@ export function dropBallPhysics(canvas, slotLabels, colorKeys = slotLabels, onLa
     if (bumperPadsEnabled) ball = checkPadCollisions(ball, pads);
     ball = resolveSlotWalls(ball);
 
-    // Check settlement
-    if (detectSlotEntry(ball.y, slotTop) || elapsed > PHYSICS_MAX_MS) {
+    // Track idle time: settle once the ball has been nearly stationary for a while
+    const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+    if (speed < IDLE_SPEED_THRESH) {
+      if (idleStart === null) idleStart = ts;
+    } else {
+      idleStart = null;
+    }
+
+    // Check settlement: natural slot entry, idle timeout, or absolute hard cap
+    if (detectSlotEntry(ball.y, slotTop)
+        || (idleStart !== null && ts - idleStart > IDLE_SETTLE_MS)
+        || elapsed > PHYSICS_MAX_MS) {
       settle(ball.x);
       return;
     }
