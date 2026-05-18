@@ -1,6 +1,6 @@
 import { setNamesFromText, getNames, getCount, remove } from './names.js';
-import { renderNameCount, syncTextarea, showWinnerModal, hideWinnerModal, showGameOver, hideGameOver, toggleSettingsPanel, closeSettingsPanel, isSettingsPanelOpen, isPhysicsMode, setPhysicsMode, isAimingMode, setAimingMode, isBumperPadsMode, setBumperPadsMode, getBallSizeValue, setBallSizeValue } from './ui.js';
-import { drawBoard, dropBall, dropBallPhysics, setBallRadius, startOscillation, setBumperPads } from './plinko.js';
+import { renderNameCount, syncTextarea, showWinnerModal, hideWinnerModal, showGameOver, hideGameOver, toggleSettingsPanel, closeSettingsPanel, isSettingsPanelOpen, isPhysicsMode, setPhysicsMode, isFullBoardMode, setFullBoardMode, isAimingMode, setAimingMode, isBumperPadsMode, setBumperPadsMode, getBallSizeValue, setBallSizeValue } from './ui.js';
+import { drawBoard, dropBall, dropBallPhysics, setBallRadius, startOscillation, setBumperPads, setFullBoard } from './plinko.js';
 
 const textarea  = document.getElementById('name-input');
 const canvas    = document.getElementById('plinko-canvas');
@@ -75,7 +75,8 @@ function onDrop() {
   }
 
   // Aiming mode forces physics so the starting position actually matters
-  const usePhysics = isPhysicsMode() || (isAimingMode() && initState !== null);
+  // Full board forces physics so the rectangular peg grid is physically simulated
+  const usePhysics = isPhysicsMode() || isFullBoardMode() || (isAimingMode() && initState !== null);
   const dropFn = usePhysics ? dropBallPhysics : dropBall;
   cancelDrop = dropFn(canvas, currentSlotNames, stableSlotNames, (winnerName) => {
     cancelDrop = null;
@@ -126,7 +127,8 @@ document.addEventListener('keydown', (e) => {
 
 const STORAGE_KEY = 'plinko-names';
 const PHYSICS_STORAGE_KEY = 'plinko-physics-mode';
-const AIMING_STORAGE_KEY  = 'plinko-aiming-mode';
+const AIMING_STORAGE_KEY      = 'plinko-aiming-mode';
+const FULL_BOARD_STORAGE_KEY  = 'plinko-full-board';
 const BUMPER_PADS_STORAGE_KEY = 'plinko-bumper-pads';
 const BALL_SIZE_STORAGE_KEY = 'plinko-ball-size';
 
@@ -145,6 +147,12 @@ function loadPhysicsMode() {
 
 function loadAimingMode() {
   setAimingMode(localStorage.getItem(AIMING_STORAGE_KEY) === 'true');
+}
+
+function loadFullBoard() {
+  const enabled = localStorage.getItem(FULL_BOARD_STORAGE_KEY) === 'true';
+  setFullBoardMode(enabled);
+  setFullBoard(enabled);
 }
 
 function loadBumperPads() {
@@ -176,6 +184,13 @@ settingsBtn.addEventListener('click', (e) => {
 
 document.getElementById('physics-toggle').addEventListener('change', () => {
   localStorage.setItem(PHYSICS_STORAGE_KEY, isPhysicsMode());
+});
+
+document.getElementById('full-board-toggle').addEventListener('change', () => {
+  const enabled = isFullBoardMode();
+  setFullBoard(enabled);
+  localStorage.setItem(FULL_BOARD_STORAGE_KEY, enabled);
+  render();
 });
 
 document.getElementById('aiming-toggle').addEventListener('change', () => {
@@ -211,6 +226,7 @@ new ResizeObserver(render).observe(container);
 loadNames();
 loadPhysicsMode();
 loadAimingMode();
+loadFullBoard();
 loadBumperPads();
 loadBallSize();
 render();

@@ -8,8 +8,9 @@ const modalWinnerTxt = document.getElementById('modal-winner-text');
 const gameoverOverlay = document.getElementById('gameover-overlay');
 const gameoverText   = document.getElementById('gameover-text');
 const settingsPanel  = document.getElementById('settings-panel');
-const physicsToggle  = document.getElementById('physics-toggle');
-const aimingToggle   = document.getElementById('aiming-toggle');
+const physicsToggle    = document.getElementById('physics-toggle');
+const fullBoardToggle  = document.getElementById('full-board-toggle');
+const aimingToggle     = document.getElementById('aiming-toggle');
 const bumperPadsToggle = document.getElementById('bumper-pads-toggle');
 const ballSizeSlider = document.getElementById('ball-size-slider');
 const ballSizeValueEl = document.getElementById('ball-size-value');
@@ -189,6 +190,16 @@ export function isPhysicsMode() {
 /** Set the physics mode toggle state. */
 export function setPhysicsMode(enabled) {
   physicsToggle.checked = enabled;
+}
+
+/** Returns true if full board mode is enabled. */
+export function isFullBoardMode() {
+  return fullBoardToggle.checked;
+}
+
+/** Set the full board toggle state. */
+export function setFullBoardMode(enabled) {
+  fullBoardToggle.checked = enabled;
 }
 
 /** Returns true if aiming mode is enabled. */

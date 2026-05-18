@@ -16,6 +16,7 @@ const PHYSICS_MAX_MS = 8000;    // fallback settle timeout
 const PAD_BOOST      = 1.4;     // speed amplification factor on pad bounce
 const PAD_DRAW_WIDTH = 10;       // drawing stroke width in px
 let bumperPadsEnabled = true;   // toggled at runtime via setBumperPads()
+let fullBoardMode     = false;  // toggled at runtime via setFullBoard()
 
 /** Get the current ball radius (px). */
 export function getBallRadius() { return ballRadius; }
@@ -150,6 +151,12 @@ export function setBumperPads(enabled) { bumperPadsEnabled = enabled; }
 /** Returns true if bumper pads are currently enabled. */
 export function getBumperPads() { return bumperPadsEnabled; }
 
+/** Enable or disable the full rectangular board layout. */
+export function setFullBoard(enabled) { fullBoardMode = enabled; }
+
+/** Returns true if the full board layout is active. */
+export function getFullBoard() { return fullBoardMode; }
+
 // ── Bumper pads (pure) ────────────────────────────────────────────────────────
 
 /**
@@ -248,23 +255,40 @@ export function computeLayout(canvasW, canvasH, slotCount) {
   const boardW = canvasW - PAD.left - PAD.right;
   const boardH = canvasH - PAD.top - PAD.bottom - SLOT_HEIGHT;
 
-  const colSpacing = boardW / pegRows;
+  const slotW      = boardW / slotCount;
   const rowSpacing = boardH / (pegRows + 1);
 
-  // Peg positions: row i has (i+1) pegs, centered horizontally
+  let colSpacing;
   const pegs = [];
-  for (let row = 0; row < pegRows; row++) {
-    const numPegs = row + 1;
-    const totalSpan = (numPegs - 1) * colSpacing;
-    const startX = boardX + boardW / 2 - totalSpan / 2;
-    const y = boardY + (row + 1) * rowSpacing;
-    for (let col = 0; col < numPegs; col++) {
-      pegs.push({ x: startX + col * colSpacing, y, row, col });
+
+  if (fullBoardMode) {
+    // Rectangular grid: even rows have (slotCount+1) pegs at divider positions,
+    // odd rows have slotCount pegs offset by half a slot (staggered diamond pattern).
+    colSpacing = slotW;
+    for (let row = 0; row < pegRows; row++) {
+      const isEven  = row % 2 === 0;
+      const numPegs = isEven ? slotCount + 1 : slotCount;
+      const startX  = isEven ? boardX : boardX + slotW / 2;
+      const y       = boardY + (row + 1) * rowSpacing;
+      for (let col = 0; col < numPegs; col++) {
+        pegs.push({ x: startX + col * slotW, y, row, col });
+      }
+    }
+  } else {
+    // Triangle: row i has (i+1) pegs, centered horizontally.
+    colSpacing = boardW / pegRows;
+    for (let row = 0; row < pegRows; row++) {
+      const numPegs   = row + 1;
+      const totalSpan = (numPegs - 1) * colSpacing;
+      const startX    = boardX + boardW / 2 - totalSpan / 2;
+      const y         = boardY + (row + 1) * rowSpacing;
+      for (let col = 0; col < numPegs; col++) {
+        pegs.push({ x: startX + col * colSpacing, y, row, col });
+      }
     }
   }
 
-  // Slot positions
-  const slotW = boardW / slotCount;
+  // Slot positions (same for both modes)
   const slotTop = canvasH - PAD.bottom - SLOT_HEIGHT;
   const slots = [];
   for (let i = 0; i < slotCount; i++) {
