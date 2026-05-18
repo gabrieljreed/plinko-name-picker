@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { computePath, pathToGap, gapToSlot, pathToWaypoints, createBallState, stepBall, detectSlotEntry, computePads, checkPadCollisions } from './plinko.js';
+import { checkPadCollisions, computeLayout, computePads, computePath, createBallState, detectSlotEntry, gapToSlot, pathToGap, pathToWaypoints, resolveWinnerSlot, stepBall } from './plinko.js';
 
 // ── computePath ───────────────────────────────────────────────────────────────
 
@@ -180,6 +180,12 @@ test('detectSlotEntry uses default threshold when not specified', () => {
   assert.equal(detectSlotEntry(425, 400), true);
 });
 
+test('computeLayout uses the provided fullBoard flag instead of hidden module state', () => {
+  const triangle = computeLayout(600, 500, 4, { fullBoard: false });
+  const full = computeLayout(600, 500, 4, { fullBoard: true });
+  assert.notEqual(triangle.pegs.length, full.pegs.length);
+});
+
 // ── computePads ───────────────────────────────────────────────────────────────
 
 test('computePads returns 4 pads (2 left, 2 right)', () => {
@@ -266,4 +272,25 @@ test('checkPadCollisions: ball moving away from pad face is not reflected', () =
   const ball = createBallState(midX + lp.nx * 10, midY + lp.ny * 10, 0.4, 0);
   const result = checkPadCollisions(ball, pads);
   assert.equal(result.vx, ball.vx, 'vx unchanged when moving away from pad face');
+});
+
+test('stepBall uses the provided ballRadius instead of a hidden module global', () => {
+  const result = stepBall(
+    { x: 5, y: 20, vx: -1, vy: 0 },
+    [],
+    0,
+    300,
+    16,
+    { ballRadius: 20 },
+  );
+  assert.equal(result.x, 20);
+});
+
+test('resolveWinnerSlot returns the exact slot value even when labels are duplicated', () => {
+  const firstAlice = { id: 'e1', label: 'Alice' };
+  const secondAlice = { id: 'e2', label: 'Alice' };
+  const { winner, label } = resolveWinnerSlot([firstAlice, secondAlice], 1);
+
+  assert.equal(winner, secondAlice);
+  assert.equal(label, 'Alice');
 });

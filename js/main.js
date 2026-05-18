@@ -1,31 +1,83 @@
-import { setNamesFromText, getNames, getCount, remove } from './names.js';
-import { renderNameCount, syncTextarea, showWinnerModal, hideWinnerModal, showGameOver, hideGameOver, toggleSettingsPanel, closeSettingsPanel, isSettingsPanelOpen, isPhysicsMode, setPhysicsMode, isFullBoardMode, setFullBoardMode, isAimingMode, setAimingMode, isBumperPadsMode, setBumperPadsMode, isSlidingBumperMode, setSlidingBumperMode, getBallSizeValue, setBallSizeValue } from './ui.js';
-import { drawBoard, dropBall, dropBallPhysics, setBallRadius, startOscillation, setBumperPads, setFullBoard, setSlidingBumper } from './plinko.js';
+import { setNamesFromText } from './names.js';
+import { closeSettingsPanel, getBallSizeValue, getUiElements, hideGameOver, hideWinnerModal, isBumperPadsMode, isSettingsPanelOpen, isSettingsTarget, isSlidingBumperMode, isWinnerModalOpen, renderNameCount, setAimingMode, setBallSizeValue, setBumperPadsMode, setFullBoardMode, setPhysicsMode, setSlidingBumperMode, showGameOver, showWinnerModal, syncTextarea, toggleSettingsPanel } from './ui.js';
+import { drawBoard, dropBall, dropBallPhysics, startOscillation } from './plinko.js';
+import { beginRound, cancelPendingWinner, confirmPendingWinner, createInitialState, getEntrantLabel, getSlotEntrants, getStableSlotEntrants, markPendingWinner, restartRound, setEntrantsFromText as setStateEntrantsFromText, syncSlotOrder, updateSettings } from './state.js';
+import { loadAppSnapshot, saveAppSnapshot } from './storage.js';
 
-const textarea  = document.getElementById('name-input');
-const canvas    = document.getElementById('plinko-canvas');
-const container = document.getElementById('board-container');
-const dropBtn   = document.getElementById('drop-btn');
-const settingsBtn = document.getElementById('settings-btn');
-const modalOk     = document.getElementById('modal-ok');
-const modalCancel = document.getElementById('modal-cancel');
-const gameoverRestart = document.getElementById('gameover-restart');
+const {
+  textarea,
+  canvas,
+  boardContainer: container,
+  dropBtn,
+  settingsBtn,
+  modalOk,
+  modalCancel,
+  gameoverRestart,
+  physicsToggle,
+  fullBoardToggle,
+  aimingToggle,
+  bumperPadsToggle,
+  slidingBumperToggle,
+  ballSizeSlider,
+} = getUiElements();
 
 let cancelDrop = null;
 let oscillationHandle = null;
-let currentSlotNames = [];
-let stableSlotNames = [];   // color source — only updated on count change or at drop time
-let slotIndices = [];       // shuffled indices into getNames(); only reshuffled when count changes
-let pendingWinner = null;   // winner name waiting for OK/Cancel
-let originalNames = null;   // snapshot taken at the start of each game
+let state = createInitialState();
 
-function reshuffleSlots() {
-  const n = getCount();
-  slotIndices = Array.from({ length: n }, (_, i) => i);
-  for (let i = n - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [slotIndices[i], slotIndices[j]] = [slotIndices[j], slotIndices[i]];
-  }
+function getEntrantCount() {
+  return state.entrants.length;
+}
+
+function getCurrentSlotValues() {
+  return getSlotEntrants(state);
+}
+
+function getStableSlotValues() {
+  const stableEntrants = getStableSlotEntrants(state);
+  return stableEntrants.length > 0 ? stableEntrants : getSlotEntrants(state);
+}
+
+function syncEntrantsFromTextarea() {
+  state = setStateEntrantsFromText(state, textarea.value);
+  setNamesFromText(textarea.value);
+}
+
+function syncStateFromTextarea() {
+  syncEntrantsFromTextarea();
+  state = syncSlotOrder(state);
+}
+
+function syncTextareaFromState() {
+  syncTextarea(state.entrants.map((entrant) => entrant.label));
+  persistApp();
+}
+
+function getBoardOptions() {
+  return {
+    ballRadius: state.settings.ballSize,
+    bumperPads: state.settings.bumperPads,
+    slidingBumper: state.settings.slidingBumper,
+    fullBoard: state.settings.fullBoard,
+  };
+}
+
+function persistApp() {
+  saveAppSnapshot(localStorage, {
+    namesText: textarea.value,
+    settings: state.settings,
+  });
+}
+
+function applySettings() {
+  const { physicsMode, fullBoard, aimingMode, bumperPads, slidingBumper, ballSize } = state.settings;
+
+  setPhysicsMode(physicsMode);
+  setFullBoardMode(fullBoard);
+  setAimingMode(aimingMode);
+  setBumperPadsMode(bumperPads);
+  setSlidingBumperMode(slidingBumper);
+  setBallSizeValue(ballSize);
 }
 
 function sizeCanvas() {
@@ -33,15 +85,14 @@ function sizeCanvas() {
   canvas.height = Math.max(container.clientHeight, 340);
 }
 
-function render() {
-  setNamesFromText(textarea.value);
-  renderNameCount(getCount());
+function renderControls() {
+  renderNameCount(getEntrantCount());
+}
+
+function renderBoard() {
   sizeCanvas();
-  if (getCount() !== slotIndices.length) {
-    reshuffleSlots();
-    stableSlotNames = slotIndices.map(i => getNames()[i]);
-  }
-  currentSlotNames = slotIndices.map(i => getNames()[i]);
+  const currentSlotValues = getCurrentSlotValues();
+  const stableSlotValues = getStableSlotValues();
 
   // Cancel any existing oscillation before redrawing
   if (oscillationHandle) {
@@ -49,20 +100,32 @@ function render() {
     oscillationHandle = null;
   }
 
-  if (getCount() > 0 && isAimingMode() && !cancelDrop) {
-    const eliminated = originalNames ? (originalNames.length - getCount()) : 0;
+  if (getEntrantCount() > 0 && state.settings.aimingMode && !cancelDrop) {
+    const eliminated = state.originalEntrants ? (state.originalEntrants.length - getEntrantCount()) : 0;
     const speedFactor = Math.min(4, 1 + eliminated * 0.25);
-    oscillationHandle = startOscillation(canvas, currentSlotNames, stableSlotNames, speedFactor);
+    oscillationHandle = startOscillation(
+      canvas,
+      currentSlotValues,
+      stableSlotValues,
+      speedFactor,
+      getBoardOptions(),
+    );
   } else {
-    drawBoard(canvas, currentSlotNames, stableSlotNames);
+    drawBoard(canvas, currentSlotValues, stableSlotValues, getBoardOptions());
   }
+}
+
+function renderApp() {
+  syncStateFromTextarea();
+  renderControls();
+  renderBoard();
 }
 
 function onDrop() {
   if (cancelDrop) return;
-  if (!originalNames) originalNames = getNames();
-  // Freeze colors at drop time so any mid-edit names get a stable color.
-  stableSlotNames = [...currentSlotNames];
+  state = beginRound(state);
+  const roundSlotEntrants = getSlotEntrants(state);
+  const stableSlotEntrants = getStableSlotEntrants(state);
   dropBtn.disabled = true;
   textarea.disabled = true;
 
@@ -76,109 +139,84 @@ function onDrop() {
 
   // Aiming mode forces physics so the starting position actually matters
   // Full board forces physics so the rectangular peg grid is physically simulated
-  const usePhysics = isPhysicsMode() || isFullBoardMode() || (isAimingMode() && initState !== null);
-  const dropFn = usePhysics ? dropBallPhysics : dropBall;
-  cancelDrop = dropFn(canvas, currentSlotNames, stableSlotNames, (winnerName) => {
+  const usePhysics = state.settings.physicsMode
+    || state.settings.fullBoard
+    || (state.settings.aimingMode && initState !== null);
+  const onWinner = (winnerName) => {
     cancelDrop = null;
-    pendingWinner = winnerName;
-    showWinnerModal(winnerName);
-  }, initState);
+    const winnerId = typeof winnerName === 'string'
+      ? roundSlotEntrants.find((entrant) => entrant.label === winnerName)?.id ?? null
+      : winnerName?.id ?? null;
+    const winnerLabel = typeof winnerName === 'string' ? winnerName : winnerName?.label ?? '';
+    if (winnerId) {
+      state = markPendingWinner(state, winnerId);
+    }
+    showWinnerModal(winnerLabel);
+  };
+
+  if (usePhysics) {
+    cancelDrop = dropBallPhysics(
+      canvas,
+      roundSlotEntrants,
+      stableSlotEntrants,
+      onWinner,
+      initState,
+      getBoardOptions(),
+    );
+  } else {
+    cancelDrop = dropBall(
+      canvas,
+      roundSlotEntrants,
+      stableSlotEntrants,
+      onWinner,
+      getBoardOptions(),
+    );
+  }
 }
 
 function onOK() {
   hideWinnerModal();
-  const winner = pendingWinner;
-  remove(winner);
-  pendingWinner = null;
+  const winner = getEntrantLabel(state, state.pendingWinnerId);
+  state = confirmPendingWinner(state);
   textarea.disabled = false;
 
-  if (getCount() === 0) {
-    syncTextarea([]);
+  if (getEntrantCount() === 0) {
+    syncTextareaFromState();
     renderNameCount(0);
     showGameOver(winner);
     return;
   }
 
-  syncTextarea(getNames());
-  render();
+  syncTextareaFromState();
+  renderApp();
 }
 
 function onCancel() {
   hideWinnerModal();
-  pendingWinner = null;
+  state = cancelPendingWinner(state);
   textarea.disabled = false;
-  render();
+  renderBoard();
 }
 
 function onRestart() {
   hideGameOver();
-  syncTextarea(originalNames ?? []);
-  originalNames = null;
-  render();
+  state = restartRound(state);
+  syncTextareaFromState();
+  renderApp();
 }
 
 // Keyboard shortcuts: Enter = OK, Escape = Cancel (when modal is open)
 document.addEventListener('keydown', (e) => {
-  if (!document.getElementById('modal-overlay').classList.contains('hidden')) {
+  if (isWinnerModalOpen()) {
     if (e.key === 'Enter') onOK();
     if (e.key === 'Escape') onCancel();
   }
 });
 
-const STORAGE_KEY = 'plinko-names';
-const PHYSICS_STORAGE_KEY = 'plinko-physics-mode';
-const AIMING_STORAGE_KEY      = 'plinko-aiming-mode';
-const FULL_BOARD_STORAGE_KEY  = 'plinko-full-board';
-const BUMPER_PADS_STORAGE_KEY = 'plinko-bumper-pads';
-const BALL_SIZE_STORAGE_KEY = 'plinko-ball-size';
-const SLIDING_BUMPER_STORAGE_KEY = 'plinko-sliding-bumper';
-
-function saveNames() {
-  localStorage.setItem(STORAGE_KEY, textarea.value);
-}
-
-function loadNames() {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (saved) textarea.value = saved;
-}
-
-function loadPhysicsMode() {
-  setPhysicsMode(localStorage.getItem(PHYSICS_STORAGE_KEY) === 'true');
-}
-
-function loadAimingMode() {
-  setAimingMode(localStorage.getItem(AIMING_STORAGE_KEY) === 'true');
-}
-
-function loadFullBoard() {
-  const enabled = localStorage.getItem(FULL_BOARD_STORAGE_KEY) === 'true';
-  setFullBoardMode(enabled);
-  setFullBoard(enabled);
-}
-
-function loadBumperPads() {
-  // Default to true (enabled) when not previously saved
-  const saved = localStorage.getItem(BUMPER_PADS_STORAGE_KEY);
-  const enabled = saved === null ? true : saved === 'true';
-  setBumperPadsMode(enabled);
-  setBumperPads(enabled);
-}
-
-function loadBallSize() {
-  const saved = parseInt(localStorage.getItem(BALL_SIZE_STORAGE_KEY), 10);
-  if (!isNaN(saved)) {
-    setBallSizeValue(saved);
-    setBallRadius(saved);
-  }
-}
-
-function loadSlidingBumper() {
-  const enabled = localStorage.getItem(SLIDING_BUMPER_STORAGE_KEY) === 'true';
-  setSlidingBumperMode(enabled);
-  setSlidingBumper(enabled);
-}
-
-textarea.addEventListener('input', () => { saveNames(); render(); });
+textarea.addEventListener('input', () => {
+  persistApp();
+  renderApp();
+});
 dropBtn.addEventListener('click', onDrop);
 modalOk.addEventListener('click', onOK);
 modalCancel.addEventListener('click', onCancel);
@@ -189,58 +227,58 @@ settingsBtn.addEventListener('click', (e) => {
   toggleSettingsPanel();
 });
 
-document.getElementById('physics-toggle').addEventListener('change', () => {
-  localStorage.setItem(PHYSICS_STORAGE_KEY, isPhysicsMode());
+physicsToggle.addEventListener('change', () => {
+  state = updateSettings(state, { physicsMode: physicsToggle.checked });
+  persistApp();
 });
 
-document.getElementById('full-board-toggle').addEventListener('change', () => {
-  const enabled = isFullBoardMode();
-  setFullBoard(enabled);
-  localStorage.setItem(FULL_BOARD_STORAGE_KEY, enabled);
-  render();
+fullBoardToggle.addEventListener('change', () => {
+  const enabled = fullBoardToggle.checked;
+  state = updateSettings(state, { fullBoard: enabled });
+  persistApp();
+  renderBoard();
 });
 
-document.getElementById('aiming-toggle').addEventListener('change', () => {
-  localStorage.setItem(AIMING_STORAGE_KEY, isAimingMode());
-  render(); // start or stop oscillation immediately
+aimingToggle.addEventListener('change', () => {
+  state = updateSettings(state, { aimingMode: aimingToggle.checked });
+  persistApp();
+  renderBoard(); // start or stop oscillation immediately
 });
 
-document.getElementById('bumper-pads-toggle').addEventListener('change', () => {
-  setBumperPads(isBumperPadsMode());
-  localStorage.setItem(BUMPER_PADS_STORAGE_KEY, isBumperPadsMode());
-  render();
+bumperPadsToggle.addEventListener('change', () => {
+  const enabled = isBumperPadsMode();
+  state = updateSettings(state, { bumperPads: enabled });
+  persistApp();
+  renderBoard();
 });
 
-document.getElementById('sliding-bumper-toggle').addEventListener('change', () => {
-  setSlidingBumper(isSlidingBumperMode());
-  localStorage.setItem(SLIDING_BUMPER_STORAGE_KEY, isSlidingBumperMode());
-  render();
+slidingBumperToggle.addEventListener('change', () => {
+  const enabled = isSlidingBumperMode();
+  state = updateSettings(state, { slidingBumper: enabled });
+  persistApp();
+  renderBoard();
 });
 
-document.getElementById('ball-size-slider').addEventListener('input', () => {
+ballSizeSlider.addEventListener('input', () => {
   const val = getBallSizeValue();
+  state = updateSettings(state, { ballSize: val });
   setBallSizeValue(val);   // keeps the displayed number in sync
-  setBallRadius(val);
-  localStorage.setItem(BALL_SIZE_STORAGE_KEY, val);
-  render();
+  persistApp();
+  renderBoard();
 });
 
 // Close settings panel when clicking outside it
 document.addEventListener('click', (e) => {
   if (isSettingsPanelOpen()
-      && !document.getElementById('settings-panel').contains(e.target)
-      && !document.getElementById('settings-btn').contains(e.target)) {
+      && !isSettingsTarget(e.target)) {
     closeSettingsPanel();
   }
 });
 
-new ResizeObserver(render).observe(container);
+new ResizeObserver(renderBoard).observe(container);
 
-loadNames();
-loadPhysicsMode();
-loadAimingMode();
-loadFullBoard();
-loadBumperPads();
-loadBallSize();
-loadSlidingBumper();
-render();
+const initialSnapshot = loadAppSnapshot(localStorage);
+textarea.value = initialSnapshot.namesText;
+state = updateSettings(state, initialSnapshot.settings);
+applySettings();
+renderApp();

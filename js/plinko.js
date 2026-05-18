@@ -2,7 +2,6 @@
 import { getNameHue } from './names.js';
 
 const PEG_RADIUS = 5;
-let ballRadius = 30;
 const SLOT_HEIGHT = 48;
 const PAD = { top: 28, right: 24, bottom: 10, left: 24 };
 const DROP_DURATION_MS = 2500; // total animation time for motion
@@ -19,15 +18,28 @@ const PAD_BOOST      = 1.4;     // speed amplification factor on pad bounce
 const PAD_DRAW_WIDTH = 10;       // drawing stroke width in px
 const SLIDING_BUMPER_LEN         = 80;  // px — width of the sliding bottom bumper (change to taste)
 const SLIDING_BUMPER_RESTITUTION = 0.9; // restitution on sliding-bumper bounce
-let bumperPadsEnabled    = true;  // toggled at runtime via setBumperPads()
-let slidingBumperEnabled = false; // toggled at runtime via setSlidingBumper()
-let fullBoardMode        = false; // toggled at runtime via setFullBoard()
+const DEFAULT_BOARD_OPTIONS = {
+  ballRadius: 30,
+  bumperPads: true,
+  slidingBumper: false,
+  fullBoard: false,
+};
+const legacyBoardOptions = { ...DEFAULT_BOARD_OPTIONS };
+
+function getBoardOptions(options = {}) {
+  return {
+    ...legacyBoardOptions,
+    ...options,
+  };
+}
 
 /** Get the current ball radius (px). */
-export function getBallRadius() { return ballRadius; }
+export function getBallRadius() { return legacyBoardOptions.ballRadius; }
 
 /** Set the ball radius used for drawing and physics (px). Min 4, max 60. */
-export function setBallRadius(r) { ballRadius = Math.max(4, Math.min(60, r)); }
+export function setBallRadius(r) {
+  legacyBoardOptions.ballRadius = Math.max(4, Math.min(60, r));
+}
 
 // ── Pure path logic (unit-tested) ─────────────────────────────────────────────
 
@@ -91,7 +103,8 @@ export function createBallState(x, y, vx = 0, vy = 0) {
  * @param {number} dt        - elapsed milliseconds since last step
  * @returns {{x,y,vx,vy}}
  */
-export function stepBall(ball, pegs, wallLeft, wallRight, dt) {
+export function stepBall(ball, pegs, wallLeft, wallRight, dt, options = {}) {
+  const { ballRadius } = getBoardOptions(options);
   let { x, y, vx, vy } = ball;
 
   // Apply gravity
@@ -151,22 +164,22 @@ export function detectSlotEntry(ballY, slotTop, threshold = SLOT_HEIGHT * 0.5) {
 }
 
 /** Enable or disable the bumper pads. */
-export function setBumperPads(enabled) { bumperPadsEnabled = enabled; }
+export function setBumperPads(enabled) { legacyBoardOptions.bumperPads = enabled; }
 
 /** Returns true if bumper pads are currently enabled. */
-export function getBumperPads() { return bumperPadsEnabled; }
+export function getBumperPads() { return legacyBoardOptions.bumperPads; }
 
 /** Enable or disable the full rectangular board layout. */
-export function setFullBoard(enabled) { fullBoardMode = enabled; }
+export function setFullBoard(enabled) { legacyBoardOptions.fullBoard = enabled; }
 
 /** Returns true if the full board layout is active. */
-export function getFullBoard() { return fullBoardMode; }
+export function getFullBoard() { return legacyBoardOptions.fullBoard; }
 
 /** Enable or disable the sliding bottom bumper. */
-export function setSlidingBumper(enabled) { slidingBumperEnabled = enabled; }
+export function setSlidingBumper(enabled) { legacyBoardOptions.slidingBumper = enabled; }
 
 /** Returns true if the sliding bumper is currently enabled. */
-export function getSlidingBumper() { return slidingBumperEnabled; }
+export function getSlidingBumper() { return legacyBoardOptions.slidingBumper; }
 
 // ── Bumper pads (pure) ────────────────────────────────────────────────────────
 
@@ -216,7 +229,8 @@ export function computePads(boardX, boardY, boardW, boardH) {
  * Check ball collisions against bumper pads and resolve with a velocity boost.
  * Pure function — returns a new ball state.
  */
-export function checkPadCollisions(ball, pads) {
+export function checkPadCollisions(ball, pads, options = {}) {
+  const { ballRadius } = getBoardOptions(options);
   let { x, y, vx, vy } = ball;
 
   for (const pad of pads) {
@@ -258,7 +272,8 @@ export function checkPadCollisions(ball, pads) {
  * Compute the full board layout from canvas dimensions and slot count.
  * Returns { pegRows, pegs, slots, colSpacing, rowSpacing, boardX, boardY, boardW, boardH }
  */
-export function computeLayout(canvasW, canvasH, slotCount) {
+export function computeLayout(canvasW, canvasH, slotCount, options = {}) {
+  const { fullBoard } = getBoardOptions(options);
   const pegRows = Math.max(6, Math.ceil(Math.log2(slotCount)) + 4);
 
   const boardX = PAD.left;
@@ -272,7 +287,7 @@ export function computeLayout(canvasW, canvasH, slotCount) {
   let colSpacing;
   const pegs = [];
 
-  if (fullBoardMode) {
+  if (fullBoard) {
     // Rectangular grid: even rows have (slotCount+1) pegs at divider positions,
     // odd rows have slotCount pegs offset by half a slot (staggered diamond pattern).
     colSpacing = slotW;
@@ -338,8 +353,9 @@ function drawPegs(ctx, pegs) {
   }
 }
 
-function drawPads(ctx, pads) {
-  if (!bumperPadsEnabled) return;
+function drawPads(ctx, pads, options = {}) {
+  const { bumperPads } = getBoardOptions(options);
+  if (!bumperPads) return;
   ctx.lineCap = 'round';
   for (const pad of pads) {
     // Outer glow
@@ -359,8 +375,9 @@ function drawPads(ctx, pads) {
   }
 }
 
-function drawSlidingBumper(ctx, bumperX, bumperY) {
-  if (!slidingBumperEnabled) return;
+function drawSlidingBumper(ctx, bumperX, bumperY, options = {}) {
+  const { slidingBumper } = getBoardOptions(options);
+  if (!slidingBumper) return;
   const halfLen = SLIDING_BUMPER_LEN / 2;
   ctx.lineCap = 'round';
   // Outer glow
@@ -379,7 +396,8 @@ function drawSlidingBumper(ctx, bumperX, bumperY) {
   ctx.stroke();
 }
 
-function resolveSlidingBumper(ball, bumperX, bumperY, bumperVx) {
+function resolveSlidingBumper(ball, bumperX, bumperY, bumperVx, options = {}) {
+  const { ballRadius } = getBoardOptions(options);
   const { x, y, vx, vy } = ball;
   const halfLen = SLIDING_BUMPER_LEN / 2;
   if (x < bumperX - halfLen || x > bumperX + halfLen) return ball;
@@ -392,9 +410,27 @@ function resolveSlidingBumper(ball, bumperX, bumperY, bumperVx) {
   };
 }
 
+function getSlotLabel(slotValue) {
+  if (typeof slotValue === 'string') return slotValue;
+  return slotValue?.label ?? '';
+}
+
+function getSlotColorKey(slotValue) {
+  if (typeof slotValue === 'string') return slotValue;
+  return slotValue?.colorKey ?? slotValue?.label ?? null;
+}
+
+export function resolveWinnerSlot(slotValues, winnerIndex) {
+  const winner = slotValues[winnerIndex];
+  return {
+    winner,
+    label: getSlotLabel(winner),
+  };
+}
+
 // colorKeys: names used for color lookup — stable across edits.
 // slotLabels: names shown as text — updated live.
-function drawSlots(ctx, slots, slotLabels, winnerSlot = -1, colorKeys = slotLabels) {
+function drawSlots(ctx, slots, slotValues, winnerSlot = -1, colorKeys = slotValues) {
   const fontSize = Math.max(9, Math.min(13, Math.floor(slots[0].w * 0.28)));
   ctx.font = `bold ${fontSize}px 'Segoe UI', system-ui, sans-serif`;
   ctx.textAlign = 'center';
@@ -405,18 +441,19 @@ function drawSlots(ctx, slots, slotLabels, winnerSlot = -1, colorKeys = slotLabe
     const gap = 2;
     const isWinner = i === winnerSlot;
 
-    ctx.fillStyle = slotColor(colorKeys[i], isWinner);
+    ctx.fillStyle = slotColor(getSlotColorKey(colorKeys[i]), isWinner);
     ctx.fillRect(s.x + gap, s.y, s.w - gap * 2, s.h - 4);
 
-    ctx.fillStyle = slotBorderColor(colorKeys[i]);
+    ctx.fillStyle = slotBorderColor(getSlotColorKey(colorKeys[i]));
     ctx.fillRect(s.x + gap, s.y, s.w - gap * 2, 3);
 
     ctx.fillStyle = isWinner ? '#ffffff' : '#d0d0f0';
-    ctx.fillText(slotLabels[i], s.cx, s.y + (s.h - 4) / 2 + 2, s.w - 10);
+    ctx.fillText(getSlotLabel(slotValues[i]), s.cx, s.y + (s.h - 4) / 2 + 2, s.w - 10);
   }
 }
 
-function drawBallAt(ctx, bx, by) {
+function drawBallAt(ctx, bx, by, options = {}) {
+  const { ballRadius } = getBoardOptions(options);
   ctx.beginPath();
   ctx.arc(bx, by, ballRadius, 0, Math.PI * 2);
   ctx.fillStyle = '#e94560';
@@ -430,16 +467,16 @@ function drawBallAt(ctx, bx, by) {
 /**
  * Draw the static board (no ball). Called between rounds.
  */
-export function drawBoard(canvas, slotLabels, colorKeys = slotLabels) {
+export function drawBoard(canvas, slotValues, colorKeys = slotValues, options = {}) {
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  if (!slotLabels || slotLabels.length < 1) return;
+  if (!slotValues || slotValues.length < 1) return;
 
-  const { pegs, slots, pads, boardX, boardW } = computeLayout(canvas.width, canvas.height, slotLabels.length);
+  const { pegs, slots, pads, boardX, boardW } = computeLayout(canvas.width, canvas.height, slotValues.length, options);
   drawPegs(ctx, pegs);
-  drawPads(ctx, pads);
-  drawSlidingBumper(ctx, boardX + boardW / 2, slots[0].y - 6);
-  drawSlots(ctx, slots, slotLabels, -1, colorKeys);
+  drawPads(ctx, pads, options);
+  drawSlidingBumper(ctx, boardX + boardW / 2, slots[0].y - 6, options);
+  drawSlots(ctx, slots, slotValues, -1, colorKeys);
 }
 
 // ── Ball animation ────────────────────────────────────────────────────────────
@@ -451,15 +488,17 @@ export function drawBoard(canvas, slotLabels, colorKeys = slotLabels) {
  *
  * Returns a cancel function — call it to abort mid-animation.
  */
-export function dropBall(canvas, slotLabels, colorKeys = slotLabels, onLand) {
+export function dropBall(canvas, slotValues, colorKeys = slotValues, onLand, options = {}) {
+  const boardOptions = getBoardOptions(options);
+  const { ballRadius } = boardOptions;
   const ctx = canvas.getContext('2d');
-  const layout = computeLayout(canvas.width, canvas.height, slotLabels.length);
+  const layout = computeLayout(canvas.width, canvas.height, slotValues.length, boardOptions);
   const { pegRows, pegs, slots, pads, colSpacing, boardX, boardY, boardW } = layout;
 
   const path = computePath(pegRows);
   const waypoints = pathToWaypoints(path);
   const gap = pathToGap(path);
-  const winnerSlotIdx = gapToSlot(gap, pegRows, slotLabels.length);
+  const winnerSlotIdx = gapToSlot(gap, pegRows, slotValues.length);
 
   // Build the list of (x, y) positions the ball travels through
   function gapPos(row, gap) {
@@ -527,11 +566,11 @@ export function dropBall(canvas, slotLabels, colorKeys = slotLabels, onLand) {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawPegs(ctx, pegs);
-    drawPads(ctx, pads);
-    drawSlidingBumper(ctx, boardX + boardW / 2, slots[0].y - 6);
-    drawSlots(ctx, slots, slotLabels, highlightSlot, colorKeys);
+    drawPads(ctx, pads, boardOptions);
+    drawSlidingBumper(ctx, boardX + boardW / 2, slots[0].y - 6, boardOptions);
+    drawSlots(ctx, slots, slotValues, highlightSlot, colorKeys);
 
-    drawBallAt(ctx, bx, by);
+    drawBallAt(ctx, bx, by, boardOptions);
 
     if (elapsed < totalDuration) {
       rafId = requestAnimationFrame(frame);
@@ -539,10 +578,10 @@ export function dropBall(canvas, slotLabels, colorKeys = slotLabels, onLand) {
       // Final frame: full highlight, no ball
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       drawPegs(ctx, pegs);
-      drawPads(ctx, pads);
-      drawSlidingBumper(ctx, boardX + boardW / 2, slots[0].y - 6);
-      drawSlots(ctx, slots, slotLabels, winnerSlotIdx, colorKeys);
-      onLand(slotLabels[winnerSlotIdx]);
+      drawPads(ctx, pads, boardOptions);
+      drawSlidingBumper(ctx, boardX + boardW / 2, slots[0].y - 6, boardOptions);
+      drawSlots(ctx, slots, slotValues, winnerSlotIdx, colorKeys);
+      onLand(resolveWinnerSlot(slotValues, winnerSlotIdx).winner);
     }
   }
 
@@ -557,19 +596,21 @@ export function dropBall(canvas, slotLabels, colorKeys = slotLabels, onLand) {
  * The winner is determined by which slot the ball physically settles into.
  * Same signature as dropBall — returns a cancel function.
  */
-export function dropBallPhysics(canvas, slotLabels, colorKeys = slotLabels, onLand, initState = null) {
+export function dropBallPhysics(canvas, slotValues, colorKeys = slotValues, onLand, initState = null, options = {}) {
+  const boardOptions = getBoardOptions(options);
+  const { ballRadius, bumperPads, slidingBumper } = boardOptions;
   const ctx = canvas.getContext('2d');
-  const layout = computeLayout(canvas.width, canvas.height, slotLabels.length);
+  const layout = computeLayout(canvas.width, canvas.height, slotValues.length, boardOptions);
   const { pegs, slots, pads, boardX, boardY, boardW } = layout;
 
-  const slotW   = boardW / slotLabels.length;
+  const slotW   = boardW / slotValues.length;
   const wallLeft  = boardX;
   const wallRight = boardX + boardW;
   const slotTop   = slots[0].y;
 
   // Slot-divider x positions (internal walls between slots)
   const dividers = [];
-  for (let i = 1; i < slotLabels.length; i++) {
+  for (let i = 1; i < slotValues.length; i++) {
     dividers.push(boardX + i * slotW);
   }
 
@@ -611,7 +652,7 @@ export function dropBallPhysics(canvas, slotLabels, colorKeys = slotLabels, onLa
 
   function winnerIdx(bx) {
     const idx = Math.floor((bx - boardX) / slotW);
-    return Math.max(0, Math.min(slotLabels.length - 1, idx));
+    return Math.max(0, Math.min(slotValues.length - 1, idx));
   }
 
   function settle(bx) {
@@ -619,10 +660,10 @@ export function dropBallPhysics(canvas, slotLabels, colorKeys = slotLabels, onLa
     const winner = winnerIdx(bx);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawPegs(ctx, pegs);
-    drawPads(ctx, pads);
-    drawSlidingBumper(ctx, bumperX, bumperY);
-    drawSlots(ctx, slots, slotLabels, winner, colorKeys);
-    onLand(slotLabels[winner]);
+    drawPads(ctx, pads, boardOptions);
+    drawSlidingBumper(ctx, bumperX, bumperY, boardOptions);
+    drawSlots(ctx, slots, slotValues, winner, colorKeys);
+    onLand(resolveWinnerSlot(slotValues, winner).winner);
   }
 
   function frame(ts) {
@@ -634,16 +675,16 @@ export function dropBallPhysics(canvas, slotLabels, colorKeys = slotLabels, onLa
     prevTs = ts;
 
     // Advance physics
-    ball = stepBall(ball, pegs, wallLeft, wallRight, dt);
-    if (bumperPadsEnabled) ball = checkPadCollisions(ball, pads);
+    ball = stepBall(ball, pegs, wallLeft, wallRight, dt, boardOptions);
+    if (bumperPads) ball = checkPadCollisions(ball, pads, boardOptions);
     ball = resolveSlotWalls(ball);
 
     // Update and collide sliding bumper (only while ball is above the slot zone)
-    if (slidingBumperEnabled) {
+    if (slidingBumper) {
       bumperX += bumperVx * dt;
       if (bumperX <= bumperMinX) { bumperX = bumperMinX; bumperVx =  Math.abs(bumperVx); }
       if (bumperX >= bumperMaxX) { bumperX = bumperMaxX; bumperVx = -Math.abs(bumperVx); }
-      if (ball.y < slotTop) ball = resolveSlidingBumper(ball, bumperX, bumperY, bumperVx);
+      if (ball.y < slotTop) ball = resolveSlidingBumper(ball, bumperX, bumperY, bumperVx, boardOptions);
     }
 
     // Track idle time: settle once the ball has been nearly stationary for a while
@@ -667,10 +708,10 @@ export function dropBallPhysics(canvas, slotLabels, colorKeys = slotLabels, onLa
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawPegs(ctx, pegs);
-    drawPads(ctx, pads);
-    drawSlidingBumper(ctx, bumperX, bumperY);
-    drawSlots(ctx, slots, slotLabels, highlightSlot, colorKeys);
-    drawBallAt(ctx, ball.x, ball.y);
+    drawPads(ctx, pads, boardOptions);
+    drawSlidingBumper(ctx, bumperX, bumperY, boardOptions);
+    drawSlots(ctx, slots, slotValues, highlightSlot, colorKeys);
+    drawBallAt(ctx, ball.x, ball.y, boardOptions);
 
     if (!settled) {
       rafId = requestAnimationFrame(frame);
@@ -690,9 +731,11 @@ export function dropBallPhysics(canvas, slotLabels, colorKeys = slotLabels, onLa
  * Returns { cancel(), getBallState() }.
  * getBallState() returns { x, y, vx, vy } — snapshot the moment Drop is clicked.
  */
-export function startOscillation(canvas, slotLabels, colorKeys = slotLabels, speedFactor = 1) {
+export function startOscillation(canvas, slotValues, colorKeys = slotValues, speedFactor = 1, options = {}) {
+  const boardOptions = getBoardOptions(options);
+  const { ballRadius, slidingBumper } = boardOptions;
   const ctx = canvas.getContext('2d');
-  const layout = computeLayout(canvas.width, canvas.height, slotLabels.length);
+  const layout = computeLayout(canvas.width, canvas.height, slotValues.length, boardOptions);
   const { pegs, slots, pads, boardX, boardY, boardW } = layout;
 
   const minX = boardX + ballRadius;
@@ -725,7 +768,7 @@ export function startOscillation(canvas, slotLabels, colorKeys = slotLabels, spe
     if (bx <= minX) { bx = minX; vx =  Math.abs(vx); }
     if (bx >= maxX) { bx = maxX; vx = -Math.abs(vx); }
 
-    if (slidingBumperEnabled) {
+    if (slidingBumper) {
       bumperX += bumperVx * dt;
       if (bumperX <= bumperMinX) { bumperX = bumperMinX; bumperVx =  Math.abs(bumperVx); }
       if (bumperX >= bumperMaxX) { bumperX = bumperMaxX; bumperVx = -Math.abs(bumperVx); }
@@ -733,10 +776,10 @@ export function startOscillation(canvas, slotLabels, colorKeys = slotLabels, spe
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawPegs(ctx, pegs);
-    drawPads(ctx, pads);
-    drawSlidingBumper(ctx, bumperX, bumperY);
-    drawSlots(ctx, slots, slotLabels, -1, colorKeys);
-    drawBallAt(ctx, bx, by);
+    drawPads(ctx, pads, boardOptions);
+    drawSlidingBumper(ctx, bumperX, bumperY, boardOptions);
+    drawSlots(ctx, slots, slotValues, -1, colorKeys);
+    drawBallAt(ctx, bx, by, boardOptions);
 
     rafId = requestAnimationFrame(frame);
   }
@@ -747,4 +790,3 @@ export function startOscillation(canvas, slotLabels, colorKeys = slotLabels, spe
   rafId = requestAnimationFrame(frame);
   return { cancel, getBallState };
 }
-

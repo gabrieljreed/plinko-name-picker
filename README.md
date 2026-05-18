@@ -30,30 +30,37 @@ No server required. Works in any modern browser (Chrome, Edge, Firefox, Safari).
 index.html          App shell and static markup
 style.css           All styles; CSS custom properties on :root
 js/
-  main.js           Entry point — wires modules together, owns app-level state
-  names.js          Pure name-list state: parse, shuffle, remove, colour assignment
-  plinko.js         Board geometry, physics, canvas drawing, ball animation
-  ui.js             DOM helpers, settings panel, confetti
-  names.test.js     Unit tests for names.js
-  plinko.test.js    Unit tests for pure functions in plinko.js
+  main.js           Thin controller wiring state, storage, UI, and plinko rendering
+  state.js          Pure app state and round transitions
+  storage.js        Persistence boundary around localStorage
+  plinko.js         Board geometry, physics, canvas drawing, and animation
+  ui.js             DOM/view helpers, settings panel, and confetti
+  names.js          Name parsing and legacy colour-assignment helpers
+  *.test.js         Unit tests for pure modules
 ```
 
 ### Data flow
 
 ```
-[textarea input] → names.js (parse/shuffle) → main.js (slot assignment)
-    → plinko.js drawBoard() → user clicks Drop
-    → plinko.js dropBall() / dropBallPhysics() → onLand(winnerName)
-    → ui.js showWinnerModal() → user clicks OK or Cancel
-    → names.js remove() (OK) or no-op (Cancel) → render() → loop
+[textarea input] → main.js → state.js (entrant parsing + slot state)
+    → storage.js (persist text/settings)
+    → plinko.js drawBoard()
+    → user clicks Drop
+    → plinko.js dropBall() / dropBallPhysics() → onLand(winner entrant)
+    → ui.js showWinnerModal()
+    → state.js confirm/cancel/restart transition
+    → main.js re-renders controls + board
 ```
 
 ### Key design points
 
-- **Pure functions** — `plinko.js` exports geometry and physics helpers (`computePath`, `stepBall`, `detectSlotEntry`, `computePads`, `checkPadCollisions`, etc.) that have no side effects and are fully unit-tested.
+- **Pure app state** — `state.js` owns entrant identity, duplicate-safe winner removal, round snapshots, slot order, and settings updates.
+- **Explicit plinko config** — `plinko.js` no longer relies on hidden runtime mode for layout or physics; board options are passed in from `main.js`.
+- **Pure functions** — `plinko.js` exports geometry and physics helpers (`computePath`, `stepBall`, `detectSlotEntry`, `computeLayout`, `computePads`, `checkPadCollisions`, etc.) that have no side effects and are fully unit-tested.
 - **Drawing functions** take `canvas` as a parameter and never touch `document` directly.
+- **`storage.js`** is the only module that reads or writes `localStorage`.
 - **`ui.js`** is the only module that caches DOM element references at load time.
-- **Slot colours** use the golden angle (137 °) for even hue distribution and are assigned once per name, staying stable across rounds.
+- **Duplicate labels are safe** because the app tracks entrants by internal IDs even when multiple slots show the same label.
 
 ## Running the tests
 
@@ -63,4 +70,4 @@ Tests use the Node.js built-in test runner — no extra packages needed.
 node --test js/*.test.js
 ```
 
-Only pure functions are tested (no DOM, no canvas). Test files live alongside the modules they test (`names.test.js`, `plinko.test.js`).
+Only pure functions are tested (no DOM, no canvas). Test files live alongside the modules they test (`state.test.js`, `storage.test.js`, `plinko.test.js`, `names.test.js`).
