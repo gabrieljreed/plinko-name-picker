@@ -12,6 +12,7 @@ const physicsToggle    = document.getElementById('physics-toggle');
 const fullBoardToggle  = document.getElementById('full-board-toggle');
 const aimingToggle     = document.getElementById('aiming-toggle');
 const bumperPadsToggle = document.getElementById('bumper-pads-toggle');
+const slidingBumperToggle = document.getElementById('sliding-bumper-toggle');
 const ballSizeSlider = document.getElementById('ball-size-slider');
 const ballSizeValueEl = document.getElementById('ball-size-value');
 
@@ -220,6 +221,16 @@ export function isBumperPadsMode() {
 /** Set the bumper pads toggle state. */
 export function setBumperPadsMode(enabled) {
   bumperPadsToggle.checked = enabled;
+}
+
+/** Returns true if the sliding bumper is enabled. */
+export function isSlidingBumperMode() {
+  return slidingBumperToggle.checked;
+}
+
+/** Set the sliding bumper toggle state. */
+export function setSlidingBumperMode(enabled) {
+  slidingBumperToggle.checked = enabled;
 }
 
 /** Returns the current ball size slider value as a number. */

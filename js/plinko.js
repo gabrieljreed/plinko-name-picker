@@ -17,8 +17,11 @@ const IDLE_SPEED_THRESH = 0.10;  // px/ms — below this the ball is considered 
 const IDLE_SETTLE_MS    = 800;   // settle after being idle this long (ms)
 const PAD_BOOST      = 1.4;     // speed amplification factor on pad bounce
 const PAD_DRAW_WIDTH = 10;       // drawing stroke width in px
-let bumperPadsEnabled = true;   // toggled at runtime via setBumperPads()
-let fullBoardMode     = false;  // toggled at runtime via setFullBoard()
+const SLIDING_BUMPER_LEN         = 80;  // px — width of the sliding bottom bumper (change to taste)
+const SLIDING_BUMPER_RESTITUTION = 0.9; // restitution on sliding-bumper bounce
+let bumperPadsEnabled    = true;  // toggled at runtime via setBumperPads()
+let slidingBumperEnabled = false; // toggled at runtime via setSlidingBumper()
+let fullBoardMode        = false; // toggled at runtime via setFullBoard()
 
 /** Get the current ball radius (px). */
 export function getBallRadius() { return ballRadius; }
@@ -158,6 +161,12 @@ export function setFullBoard(enabled) { fullBoardMode = enabled; }
 
 /** Returns true if the full board layout is active. */
 export function getFullBoard() { return fullBoardMode; }
+
+/** Enable or disable the sliding bottom bumper. */
+export function setSlidingBumper(enabled) { slidingBumperEnabled = enabled; }
+
+/** Returns true if the sliding bumper is currently enabled. */
+export function getSlidingBumper() { return slidingBumperEnabled; }
 
 // ── Bumper pads (pure) ────────────────────────────────────────────────────────
 
@@ -350,6 +359,39 @@ function drawPads(ctx, pads) {
   }
 }
 
+function drawSlidingBumper(ctx, bumperX, bumperY) {
+  if (!slidingBumperEnabled) return;
+  const halfLen = SLIDING_BUMPER_LEN / 2;
+  ctx.lineCap = 'round';
+  // Outer glow
+  ctx.lineWidth = 14;
+  ctx.strokeStyle = 'rgba(0, 220, 255, 0.28)';
+  ctx.beginPath();
+  ctx.moveTo(bumperX - halfLen, bumperY);
+  ctx.lineTo(bumperX + halfLen, bumperY);
+  ctx.stroke();
+  // Core
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = '#00dcff';
+  ctx.beginPath();
+  ctx.moveTo(bumperX - halfLen, bumperY);
+  ctx.lineTo(bumperX + halfLen, bumperY);
+  ctx.stroke();
+}
+
+function resolveSlidingBumper(ball, bumperX, bumperY, bumperVx) {
+  const { x, y, vx, vy } = ball;
+  const halfLen = SLIDING_BUMPER_LEN / 2;
+  if (x < bumperX - halfLen || x > bumperX + halfLen) return ball;
+  if (vy <= 0 || y + ballRadius < bumperY) return ball;
+  return {
+    x,
+    y: bumperY - ballRadius,
+    vx: vx + bumperVx * 0.35,
+    vy: -vy * SLIDING_BUMPER_RESTITUTION,
+  };
+}
+
 // colorKeys: names used for color lookup — stable across edits.
 // slotLabels: names shown as text — updated live.
 function drawSlots(ctx, slots, slotLabels, winnerSlot = -1, colorKeys = slotLabels) {
@@ -393,9 +435,10 @@ export function drawBoard(canvas, slotLabels, colorKeys = slotLabels) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   if (!slotLabels || slotLabels.length < 1) return;
 
-  const { pegs, slots, pads } = computeLayout(canvas.width, canvas.height, slotLabels.length);
+  const { pegs, slots, pads, boardX, boardW } = computeLayout(canvas.width, canvas.height, slotLabels.length);
   drawPegs(ctx, pegs);
   drawPads(ctx, pads);
+  drawSlidingBumper(ctx, boardX + boardW / 2, slots[0].y - 6);
   drawSlots(ctx, slots, slotLabels, -1, colorKeys);
 }
 
@@ -485,6 +528,7 @@ export function dropBall(canvas, slotLabels, colorKeys = slotLabels, onLand) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawPegs(ctx, pegs);
     drawPads(ctx, pads);
+    drawSlidingBumper(ctx, boardX + boardW / 2, slots[0].y - 6);
     drawSlots(ctx, slots, slotLabels, highlightSlot, colorKeys);
 
     drawBallAt(ctx, bx, by);
@@ -496,6 +540,7 @@ export function dropBall(canvas, slotLabels, colorKeys = slotLabels, onLand) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       drawPegs(ctx, pegs);
       drawPads(ctx, pads);
+      drawSlidingBumper(ctx, boardX + boardW / 2, slots[0].y - 6);
       drawSlots(ctx, slots, slotLabels, winnerSlotIdx, colorKeys);
       onLand(slotLabels[winnerSlotIdx]);
     }
@@ -542,6 +587,13 @@ export function dropBallPhysics(canvas, slotLabels, colorKeys = slotLabels, onLa
   let settled  = false;
   let idleStart = null; // timestamp when ball speed first dropped below threshold
 
+  // Sliding bumper state
+  const bumperY    = slotTop - 6;
+  const bumperMinX = boardX + SLIDING_BUMPER_LEN / 2;
+  const bumperMaxX = boardX + boardW - SLIDING_BUMPER_LEN / 2;
+  let bumperX  = boardX + boardW / 2;
+  let bumperVx = boardW / 2500; // one full board-width crossing in ~2.5 s
+
   function resolveSlotWalls(b) {
     // Only apply slot-divider collisions once ball is in the slot zone
     if (b.y < slotTop) return b;
@@ -568,6 +620,7 @@ export function dropBallPhysics(canvas, slotLabels, colorKeys = slotLabels, onLa
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawPegs(ctx, pegs);
     drawPads(ctx, pads);
+    drawSlidingBumper(ctx, bumperX, bumperY);
     drawSlots(ctx, slots, slotLabels, winner, colorKeys);
     onLand(slotLabels[winner]);
   }
@@ -584,6 +637,14 @@ export function dropBallPhysics(canvas, slotLabels, colorKeys = slotLabels, onLa
     ball = stepBall(ball, pegs, wallLeft, wallRight, dt);
     if (bumperPadsEnabled) ball = checkPadCollisions(ball, pads);
     ball = resolveSlotWalls(ball);
+
+    // Update and collide sliding bumper (only while ball is above the slot zone)
+    if (slidingBumperEnabled) {
+      bumperX += bumperVx * dt;
+      if (bumperX <= bumperMinX) { bumperX = bumperMinX; bumperVx =  Math.abs(bumperVx); }
+      if (bumperX >= bumperMaxX) { bumperX = bumperMaxX; bumperVx = -Math.abs(bumperVx); }
+      if (ball.y < slotTop) ball = resolveSlidingBumper(ball, bumperX, bumperY, bumperVx);
+    }
 
     // Track idle time: settle once the ball has been nearly stationary for a while
     const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
@@ -607,6 +668,7 @@ export function dropBallPhysics(canvas, slotLabels, colorKeys = slotLabels, onLa
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawPegs(ctx, pegs);
     drawPads(ctx, pads);
+    drawSlidingBumper(ctx, bumperX, bumperY);
     drawSlots(ctx, slots, slotLabels, highlightSlot, colorKeys);
     drawBallAt(ctx, ball.x, ball.y);
 
@@ -642,6 +704,13 @@ export function startOscillation(canvas, slotLabels, colorKeys = slotLabels, spe
   let bx = boardX + boardW / 2;
   let vx = speed; // start moving right
 
+  // Sliding bumper state (visual + animation during oscillation; no collision until drop)
+  const bumperY    = slots[0].y - 6;
+  const bumperMinX = boardX + SLIDING_BUMPER_LEN / 2;
+  const bumperMaxX = boardX + boardW - SLIDING_BUMPER_LEN / 2;
+  let bumperX  = boardX + boardW / 2;
+  let bumperVx = boardW / 2500;
+
   let rafId;
   let prevTs = null;
   let cancelled = false;
@@ -656,9 +725,16 @@ export function startOscillation(canvas, slotLabels, colorKeys = slotLabels, spe
     if (bx <= minX) { bx = minX; vx =  Math.abs(vx); }
     if (bx >= maxX) { bx = maxX; vx = -Math.abs(vx); }
 
+    if (slidingBumperEnabled) {
+      bumperX += bumperVx * dt;
+      if (bumperX <= bumperMinX) { bumperX = bumperMinX; bumperVx =  Math.abs(bumperVx); }
+      if (bumperX >= bumperMaxX) { bumperX = bumperMaxX; bumperVx = -Math.abs(bumperVx); }
+    }
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawPegs(ctx, pegs);
     drawPads(ctx, pads);
+    drawSlidingBumper(ctx, bumperX, bumperY);
     drawSlots(ctx, slots, slotLabels, -1, colorKeys);
     drawBallAt(ctx, bx, by);
 
