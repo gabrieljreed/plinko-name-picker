@@ -13,6 +13,9 @@ const GRAVITY        = 0.0012;  // px/ms²
 const RESTITUTION    = 0.78;    // peg bounce coefficient (bouncy/chaotic)
 const WALL_RESTITUTION = 0.6;   // outer-wall bounce coefficient
 const PHYSICS_MAX_MS = 8000;    // fallback settle timeout
+const PAD_BOOST      = 1.4;     // speed amplification factor on pad bounce
+const PAD_DRAW_WIDTH = 10;       // drawing stroke width in px
+let bumperPadsEnabled = true;   // toggled at runtime via setBumperPads()
 
 /** Get the current ball radius (px). */
 export function getBallRadius() { return ballRadius; }
@@ -141,6 +144,96 @@ export function detectSlotEntry(ballY, slotTop, threshold = SLOT_HEIGHT * 0.5) {
   return ballY > slotTop + threshold;
 }
 
+/** Enable or disable the bumper pads. */
+export function setBumperPads(enabled) { bumperPadsEnabled = enabled; }
+
+/** Returns true if bumper pads are currently enabled. */
+export function getBumperPads() { return bumperPadsEnabled; }
+
+// ── Bumper pads (pure) ────────────────────────────────────────────────────────
+
+/**
+ * Compute the bumper pad line segments for the board.
+ * Returns [{ x1,y1, x2,y2, nx,ny }] where (nx,ny) is the inward unit normal.
+ * Left pads angle up-right (/); right pads angle up-left (\).
+ */
+export function computePads(boardX, boardY, boardW, boardH) {
+  const padLen = Math.min(70, boardW * 0.16);
+  // Pad leans at 30° from vertical (60° from horizontal):
+  //   horizontal extent = padLen * sin30° = padLen * 0.5
+  //   vertical extent   = padLen * cos30° = padLen * 0.866
+  const sinA = 0.5;
+  const cosA = 0.866;
+  const halfH = padLen * cosA / 2;
+  const extW  = padLen * sinA;
+
+  const pads = [];
+
+  // Left pads: attached to left wall, lower endpoint at wall, slope upward-right
+  //   direction (sinA, -cosA) → inward normal = (cosA, sinA)
+  for (const frac of [0.28, 0.62]) {
+    const cy = boardY + frac * boardH;
+    pads.push({
+      x1: boardX,         y1: cy + halfH,
+      x2: boardX + extW,  y2: cy - halfH,
+      nx: cosA, ny: sinA,
+    });
+  }
+
+  // Right pads: attached to right wall, lower endpoint at wall, slope upward-left
+  //   direction (-sinA, -cosA) → inward normal = (-cosA, sinA)
+  for (const frac of [0.45, 0.78]) {
+    const cy = boardY + frac * boardH;
+    pads.push({
+      x1: boardX + boardW - extW,  y1: cy - halfH,
+      x2: boardX + boardW,         y2: cy + halfH,
+      nx: -cosA, ny: sinA,
+    });
+  }
+
+  return pads;
+}
+
+/**
+ * Check ball collisions against bumper pads and resolve with a velocity boost.
+ * Pure function — returns a new ball state.
+ */
+export function checkPadCollisions(ball, pads) {
+  let { x, y, vx, vy } = ball;
+
+  for (const pad of pads) {
+    const segDx = pad.x2 - pad.x1;
+    const segDy = pad.y2 - pad.y1;
+    const lenSq = segDx * segDx + segDy * segDy;
+    if (lenSq === 0) continue;
+
+    // Closest point on the segment to the ball center
+    const t  = Math.max(0, Math.min(1, ((x - pad.x1) * segDx + (y - pad.y1) * segDy) / lenSq));
+    const cx = pad.x1 + t * segDx;
+    const cy = pad.y1 + t * segDy;
+
+    const dx = x - cx;
+    const dy = y - cy;
+    const distSq = dx * dx + dy * dy;
+
+    if (distSq < ballRadius * ballRadius && distSq > 0) {
+      // Push ball out along the direction from segment to ball center
+      const dist = Math.sqrt(distSq);
+      x = cx + (dx / dist) * ballRadius;
+      y = cy + (dy / dist) * ballRadius;
+
+      // Reflect velocity along the pad's inward normal with a speed boost
+      const vDotN = vx * pad.nx + vy * pad.ny;
+      if (vDotN < 0) { // only resolve if approaching the pad face
+        vx -= (1 + PAD_BOOST) * vDotN * pad.nx;
+        vy -= (1 + PAD_BOOST) * vDotN * pad.ny;
+      }
+    }
+  }
+
+  return { x, y, vx, vy };
+}
+
 // ── Board layout ──────────────────────────────────────────────────────────────
 
 /**
@@ -179,7 +272,8 @@ export function computeLayout(canvasW, canvasH, slotCount) {
     slots.push({ x, y: slotTop, w: slotW, h: SLOT_HEIGHT, cx: x + slotW / 2 });
   }
 
-  return { pegRows, pegs, slots, colSpacing, rowSpacing, boardX, boardY, boardW, boardH };
+  const pads = computePads(boardX, boardY, boardW, boardH);
+  return { pegRows, pegs, slots, pads, colSpacing, rowSpacing, boardX, boardY, boardW, boardH };
 }
 
 // ── Drawing helpers ───────────────────────────────────────────────────────────
@@ -206,6 +300,27 @@ function drawPegs(ctx, pegs) {
     ctx.arc(peg.x - 1.5, peg.y - 1.5, PEG_RADIUS * 0.45, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(255,255,255,0.25)';
     ctx.fill();
+  }
+}
+
+function drawPads(ctx, pads) {
+  if (!bumperPadsEnabled) return;
+  ctx.lineCap = 'round';
+  for (const pad of pads) {
+    // Outer glow
+    ctx.lineWidth = PAD_DRAW_WIDTH + 6;
+    ctx.strokeStyle = 'rgba(255, 170, 0, 0.30)';
+    ctx.beginPath();
+    ctx.moveTo(pad.x1, pad.y1);
+    ctx.lineTo(pad.x2, pad.y2);
+    ctx.stroke();
+    // Core
+    ctx.lineWidth = PAD_DRAW_WIDTH;
+    ctx.strokeStyle = '#ffaa00';
+    ctx.beginPath();
+    ctx.moveTo(pad.x1, pad.y1);
+    ctx.lineTo(pad.x2, pad.y2);
+    ctx.stroke();
   }
 }
 
@@ -252,8 +367,9 @@ export function drawBoard(canvas, slotLabels, colorKeys = slotLabels) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   if (!slotLabels || slotLabels.length < 1) return;
 
-  const { pegs, slots } = computeLayout(canvas.width, canvas.height, slotLabels.length);
+  const { pegs, slots, pads } = computeLayout(canvas.width, canvas.height, slotLabels.length);
   drawPegs(ctx, pegs);
+  drawPads(ctx, pads);
   drawSlots(ctx, slots, slotLabels, -1, colorKeys);
 }
 
@@ -269,7 +385,7 @@ export function drawBoard(canvas, slotLabels, colorKeys = slotLabels) {
 export function dropBall(canvas, slotLabels, colorKeys = slotLabels, onLand) {
   const ctx = canvas.getContext('2d');
   const layout = computeLayout(canvas.width, canvas.height, slotLabels.length);
-  const { pegRows, pegs, slots, colSpacing, boardX, boardY, boardW } = layout;
+  const { pegRows, pegs, slots, pads, colSpacing, boardX, boardY, boardW } = layout;
 
   const path = computePath(pegRows);
   const waypoints = pathToWaypoints(path);
@@ -342,6 +458,7 @@ export function dropBall(canvas, slotLabels, colorKeys = slotLabels, onLand) {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawPegs(ctx, pegs);
+    drawPads(ctx, pads);
     drawSlots(ctx, slots, slotLabels, highlightSlot, colorKeys);
 
     drawBallAt(ctx, bx, by);
@@ -352,6 +469,7 @@ export function dropBall(canvas, slotLabels, colorKeys = slotLabels, onLand) {
       // Final frame: full highlight, no ball
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       drawPegs(ctx, pegs);
+      drawPads(ctx, pads);
       drawSlots(ctx, slots, slotLabels, winnerSlotIdx, colorKeys);
       onLand(slotLabels[winnerSlotIdx]);
     }
@@ -371,7 +489,7 @@ export function dropBall(canvas, slotLabels, colorKeys = slotLabels, onLand) {
 export function dropBallPhysics(canvas, slotLabels, colorKeys = slotLabels, onLand, initState = null) {
   const ctx = canvas.getContext('2d');
   const layout = computeLayout(canvas.width, canvas.height, slotLabels.length);
-  const { pegs, slots, boardX, boardY, boardW } = layout;
+  const { pegs, slots, pads, boardX, boardY, boardW } = layout;
 
   const slotW   = boardW / slotLabels.length;
   const wallLeft  = boardX;
@@ -422,6 +540,7 @@ export function dropBallPhysics(canvas, slotLabels, colorKeys = slotLabels, onLa
     const winner = winnerIdx(bx);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawPegs(ctx, pegs);
+    drawPads(ctx, pads);
     drawSlots(ctx, slots, slotLabels, winner, colorKeys);
     onLand(slotLabels[winner]);
   }
@@ -436,6 +555,7 @@ export function dropBallPhysics(canvas, slotLabels, colorKeys = slotLabels, onLa
 
     // Advance physics
     ball = stepBall(ball, pegs, wallLeft, wallRight, dt);
+    if (bumperPadsEnabled) ball = checkPadCollisions(ball, pads);
     ball = resolveSlotWalls(ball);
 
     // Check settlement
@@ -449,6 +569,7 @@ export function dropBallPhysics(canvas, slotLabels, colorKeys = slotLabels, onLa
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawPegs(ctx, pegs);
+    drawPads(ctx, pads);
     drawSlots(ctx, slots, slotLabels, highlightSlot, colorKeys);
     drawBallAt(ctx, ball.x, ball.y);
 
@@ -473,7 +594,7 @@ export function dropBallPhysics(canvas, slotLabels, colorKeys = slotLabels, onLa
 export function startOscillation(canvas, slotLabels, colorKeys = slotLabels, speedFactor = 1) {
   const ctx = canvas.getContext('2d');
   const layout = computeLayout(canvas.width, canvas.height, slotLabels.length);
-  const { pegs, slots, boardX, boardY, boardW } = layout;
+  const { pegs, slots, pads, boardX, boardY, boardW } = layout;
 
   const minX = boardX + ballRadius;
   const maxX = boardX + boardW - ballRadius;
@@ -500,6 +621,7 @@ export function startOscillation(canvas, slotLabels, colorKeys = slotLabels, spe
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawPegs(ctx, pegs);
+    drawPads(ctx, pads);
     drawSlots(ctx, slots, slotLabels, -1, colorKeys);
     drawBallAt(ctx, bx, by);
 

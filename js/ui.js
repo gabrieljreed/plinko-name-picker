@@ -10,6 +10,7 @@ const gameoverText   = document.getElementById('gameover-text');
 const settingsPanel  = document.getElementById('settings-panel');
 const physicsToggle  = document.getElementById('physics-toggle');
 const aimingToggle   = document.getElementById('aiming-toggle');
+const bumperPadsToggle = document.getElementById('bumper-pads-toggle');
 const ballSizeSlider = document.getElementById('ball-size-slider');
 const ballSizeValueEl = document.getElementById('ball-size-value');
 
@@ -90,6 +91,16 @@ export function isAimingMode() {
 /** Set the aiming mode toggle state. */
 export function setAimingMode(enabled) {
   aimingToggle.checked = enabled;
+}
+
+/** Returns true if bumper pads mode is enabled. */
+export function isBumperPadsMode() {
+  return bumperPadsToggle.checked;
+}
+
+/** Set the bumper pads toggle state. */
+export function setBumperPadsMode(enabled) {
+  bumperPadsToggle.checked = enabled;
 }
 
 /** Returns the current ball size slider value as a number. */

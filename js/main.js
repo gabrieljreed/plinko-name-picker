@@ -1,6 +1,6 @@
 import { setNamesFromText, getNames, getCount, remove } from './names.js';
-import { renderNameCount, syncTextarea, showWinnerModal, hideWinnerModal, showGameOver, hideGameOver, toggleSettingsPanel, closeSettingsPanel, isSettingsPanelOpen, isPhysicsMode, setPhysicsMode, isAimingMode, setAimingMode, getBallSizeValue, setBallSizeValue } from './ui.js';
-import { drawBoard, dropBall, dropBallPhysics, setBallRadius, startOscillation } from './plinko.js';
+import { renderNameCount, syncTextarea, showWinnerModal, hideWinnerModal, showGameOver, hideGameOver, toggleSettingsPanel, closeSettingsPanel, isSettingsPanelOpen, isPhysicsMode, setPhysicsMode, isAimingMode, setAimingMode, isBumperPadsMode, setBumperPadsMode, getBallSizeValue, setBallSizeValue } from './ui.js';
+import { drawBoard, dropBall, dropBallPhysics, setBallRadius, startOscillation, setBumperPads } from './plinko.js';
 
 const textarea  = document.getElementById('name-input');
 const canvas    = document.getElementById('plinko-canvas');
@@ -127,6 +127,7 @@ document.addEventListener('keydown', (e) => {
 const STORAGE_KEY = 'plinko-names';
 const PHYSICS_STORAGE_KEY = 'plinko-physics-mode';
 const AIMING_STORAGE_KEY  = 'plinko-aiming-mode';
+const BUMPER_PADS_STORAGE_KEY = 'plinko-bumper-pads';
 const BALL_SIZE_STORAGE_KEY = 'plinko-ball-size';
 
 function saveNames() {
@@ -144,6 +145,14 @@ function loadPhysicsMode() {
 
 function loadAimingMode() {
   setAimingMode(localStorage.getItem(AIMING_STORAGE_KEY) === 'true');
+}
+
+function loadBumperPads() {
+  // Default to true (enabled) when not previously saved
+  const saved = localStorage.getItem(BUMPER_PADS_STORAGE_KEY);
+  const enabled = saved === null ? true : saved === 'true';
+  setBumperPadsMode(enabled);
+  setBumperPads(enabled);
 }
 
 function loadBallSize() {
@@ -174,6 +183,12 @@ document.getElementById('aiming-toggle').addEventListener('change', () => {
   render(); // start or stop oscillation immediately
 });
 
+document.getElementById('bumper-pads-toggle').addEventListener('change', () => {
+  setBumperPads(isBumperPadsMode());
+  localStorage.setItem(BUMPER_PADS_STORAGE_KEY, isBumperPadsMode());
+  render();
+});
+
 document.getElementById('ball-size-slider').addEventListener('input', () => {
   const val = getBallSizeValue();
   setBallSizeValue(val);   // keeps the displayed number in sync
@@ -196,5 +211,6 @@ new ResizeObserver(render).observe(container);
 loadNames();
 loadPhysicsMode();
 loadAimingMode();
+loadBumperPads();
 loadBallSize();
 render();
