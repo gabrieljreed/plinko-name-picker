@@ -28,7 +28,48 @@
           rows="6"
           spellcheck="false"
         ></textarea>
-        <button id="drop-btn" disabled>Drop!</button>
+        <div id="controls-footer">
+          <button id="settings-btn" aria-label="Settings">⚙</button>
+          <button id="drop-btn" disabled>Drop!</button>
+
+          <div id="settings-panel" class="hidden" role="dialog" aria-label="Settings">
+            <label class="settings-row">
+              <input type="checkbox" id="physics-toggle" />
+              <span class="settings-label">Physics mode</span>
+            </label>
+            <p class="settings-desc">Ball follows real physics instead of a preset path.</p>
+            <div class="settings-divider"></div>
+            <label class="settings-row">
+              <input type="checkbox" id="full-board-toggle" />
+              <span class="settings-label">Full board</span>
+            </label>
+            <p class="settings-desc">Rectangular peg grid instead of a triangle. Uses physics mode.</p>
+            <div class="settings-divider"></div>
+            <label class="settings-row">
+              <input type="checkbox" id="aiming-toggle" />
+              <span class="settings-label">Aiming mode</span>
+            </label>
+            <p class="settings-desc">Ball sways before dropping — click Drop to release from wherever it is.</p>
+            <div class="settings-divider"></div>
+            <label class="settings-row">
+              <input type="checkbox" id="bumper-pads-toggle" checked />
+              <span class="settings-label">Bumper pads</span>
+            </label>
+            <p class="settings-desc">Angled pads on the sides send the ball bouncing with extra speed.</p>
+            <div class="settings-divider"></div>
+            <label class="settings-row">
+              <input type="checkbox" id="sliding-bumper-toggle" />
+              <span class="settings-label">Sliding bumper</span>
+            </label>
+            <p class="settings-desc">A bumper slides back and forth just above the slots — hitting it sends the ball bouncing back up.</p>
+            <div class="settings-divider"></div>
+            <div class="settings-row">
+              <span class="settings-label">Ball size</span>
+              <input type="range" id="ball-size-slider" min="8" max="50" value="30" />
+              <span id="ball-size-value">30</span>
+            </div>
+          </div>
+        </div>
       </section>
     </main>
   </div>
