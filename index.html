@@ -28,7 +28,18 @@
           rows="6"
           spellcheck="false"
         ></textarea>
-        <button id="drop-btn" disabled>Drop!</button>
+        <div id="controls-footer">
+          <button id="settings-btn" aria-label="Settings">⚙</button>
+          <button id="drop-btn" disabled>Drop!</button>
+
+          <div id="settings-panel" class="hidden" role="dialog" aria-label="Settings">
+            <label class="settings-row">
+              <input type="checkbox" id="physics-toggle" />
+              <span class="settings-label">Physics mode</span>
+            </label>
+            <p class="settings-desc">Ball follows real physics instead of a preset path.</p>
+          </div>
+        </div>
       </section>
     </main>
   </div>

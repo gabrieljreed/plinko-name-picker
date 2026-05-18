@@ -1,11 +1,12 @@
 import { setNamesFromText, getNames, getCount, remove } from './names.js';
-import { renderNameCount, syncTextarea, showWinnerModal, hideWinnerModal, showGameOver, hideGameOver } from './ui.js';
-import { drawBoard, dropBall } from './plinko.js';
+import { renderNameCount, syncTextarea, showWinnerModal, hideWinnerModal, showGameOver, hideGameOver, toggleSettingsPanel, closeSettingsPanel, isSettingsPanelOpen, isPhysicsMode, setPhysicsMode } from './ui.js';
+import { drawBoard, dropBall, dropBallPhysics } from './plinko.js';
 
 const textarea  = document.getElementById('name-input');
 const canvas    = document.getElementById('plinko-canvas');
 const container = document.getElementById('board-container');
 const dropBtn   = document.getElementById('drop-btn');
+const settingsBtn = document.getElementById('settings-btn');
 const modalOk     = document.getElementById('modal-ok');
 const modalCancel = document.getElementById('modal-cancel');
 const gameoverRestart = document.getElementById('gameover-restart');
@@ -51,7 +52,8 @@ function onDrop() {
   dropBtn.disabled = true;
   textarea.disabled = true;
 
-  cancelDrop = dropBall(canvas, currentSlotNames, stableSlotNames, (winnerName) => {
+  const dropFn = isPhysicsMode() ? dropBallPhysics : dropBall;
+  cancelDrop = dropFn(canvas, currentSlotNames, stableSlotNames, (winnerName) => {
     cancelDrop = null;
     pendingWinner = winnerName;
     showWinnerModal(winnerName);
@@ -99,6 +101,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 const STORAGE_KEY = 'plinko-names';
+const PHYSICS_STORAGE_KEY = 'plinko-physics-mode';
 
 function saveNames() {
   localStorage.setItem(STORAGE_KEY, textarea.value);
@@ -109,13 +112,36 @@ function loadNames() {
   if (saved) textarea.value = saved;
 }
 
+function loadPhysicsMode() {
+  setPhysicsMode(localStorage.getItem(PHYSICS_STORAGE_KEY) === 'true');
+}
+
 textarea.addEventListener('input', () => { saveNames(); render(); });
 dropBtn.addEventListener('click', onDrop);
 modalOk.addEventListener('click', onOK);
 modalCancel.addEventListener('click', onCancel);
 gameoverRestart.addEventListener('click', onRestart);
 
+settingsBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  toggleSettingsPanel();
+});
+
+document.getElementById('physics-toggle').addEventListener('change', () => {
+  localStorage.setItem(PHYSICS_STORAGE_KEY, isPhysicsMode());
+});
+
+// Close settings panel when clicking outside it
+document.addEventListener('click', (e) => {
+  if (isSettingsPanelOpen()
+      && !document.getElementById('settings-panel').contains(e.target)
+      && !document.getElementById('settings-btn').contains(e.target)) {
+    closeSettingsPanel();
+  }
+});
+
 new ResizeObserver(render).observe(container);
 
 loadNames();
+loadPhysicsMode();
 render();

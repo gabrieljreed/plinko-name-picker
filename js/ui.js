@@ -7,6 +7,8 @@ const modalOverlay   = document.getElementById('modal-overlay');
 const modalWinnerTxt = document.getElementById('modal-winner-text');
 const gameoverOverlay = document.getElementById('gameover-overlay');
 const gameoverText   = document.getElementById('gameover-text');
+const settingsPanel  = document.getElementById('settings-panel');
+const physicsToggle  = document.getElementById('physics-toggle');
 
 /** Update the "(N)" count label and enable/disable the Drop button. */
 export function renderNameCount(count) {
@@ -41,4 +43,38 @@ export function showGameOver(lastWinner) {
 /** Hide the game-over screen. */
 export function hideGameOver() {
   gameoverOverlay.classList.add('hidden');
+}
+
+/** Toggle the settings panel open/closed, anchored above the settings button. */
+export function toggleSettingsPanel() {
+  if (settingsPanel.classList.contains('hidden')) {
+    // Position panel above the settings button using viewport coordinates
+    const btn = document.getElementById('settings-btn');
+    const rect = btn.getBoundingClientRect();
+    settingsPanel.style.bottom = (window.innerHeight - rect.top + 8) + 'px';
+    settingsPanel.style.right  = (window.innerWidth - rect.right) + 'px';
+    settingsPanel.classList.remove('hidden');
+  } else {
+    settingsPanel.classList.add('hidden');
+  }
+}
+
+/** Close the settings panel if it is open. */
+export function closeSettingsPanel() {
+  settingsPanel.classList.add('hidden');
+}
+
+/** Returns true if the settings panel is currently visible. */
+export function isSettingsPanelOpen() {
+  return !settingsPanel.classList.contains('hidden');
+}
+
+/** Returns true if physics mode is enabled. */
+export function isPhysicsMode() {
+  return physicsToggle.checked;
+}
+
+/** Set the physics mode toggle state. */
+export function setPhysicsMode(enabled) {
+  physicsToggle.checked = enabled;
 }

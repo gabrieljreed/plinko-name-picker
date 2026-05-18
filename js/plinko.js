@@ -2,11 +2,17 @@
 import { getNameHue } from './names.js';
 
 const PEG_RADIUS = 5;
-const BALL_RADIUS = 20;
+const BALL_RADIUS = 30;
 const SLOT_HEIGHT = 48;
 const PAD = { top: 28, right: 24, bottom: 10, left: 24 };
 const DROP_DURATION_MS = 2500; // total animation time for motion
 const PAUSE_MS = 100; // pause on each peg before moving
+
+// ── Physics constants ─────────────────────────────────────────────────────────
+const GRAVITY        = 0.0012;  // px/ms²
+const RESTITUTION    = 0.78;    // peg bounce coefficient (bouncy/chaotic)
+const WALL_RESTITUTION = 0.6;   // outer-wall bounce coefficient
+const PHYSICS_MAX_MS = 8000;    // fallback settle timeout
 
 // ── Pure path logic (unit-tested) ─────────────────────────────────────────────
 
@@ -47,6 +53,86 @@ export function pathToWaypoints(path) {
     waypoints.push({ row, gap });
   }
   return waypoints;
+}
+
+// ── Pure physics logic (unit-tested) ─────────────────────────────────────────
+
+/**
+ * Create an initial ball state object.
+ */
+export function createBallState(x, y, vx = 0, vy = 0) {
+  return { x, y, vx, vy };
+}
+
+/**
+ * Advance ball physics by `dt` milliseconds.
+ * Handles gravity, outer-wall reflection, and peg collisions.
+ * Pure: no side effects, returns a new state object.
+ *
+ * @param {{x,y,vx,vy}} ball
+ * @param {Array<{x,y}>} pegs
+ * @param {number} wallLeft  - left boundary (ball center must stay right of this + BALL_RADIUS)
+ * @param {number} wallRight - right boundary
+ * @param {number} dt        - elapsed milliseconds since last step
+ * @returns {{x,y,vx,vy}}
+ */
+export function stepBall(ball, pegs, wallLeft, wallRight, dt) {
+  let { x, y, vx, vy } = ball;
+
+  // Apply gravity
+  vy += GRAVITY * dt;
+
+  // Advance position
+  x += vx * dt;
+  y += vy * dt;
+
+  // Left wall
+  if (x - BALL_RADIUS < wallLeft) {
+    x = wallLeft + BALL_RADIUS;
+    vx = Math.abs(vx) * WALL_RESTITUTION;
+  }
+
+  // Right wall
+  if (x + BALL_RADIUS > wallRight) {
+    x = wallRight - BALL_RADIUS;
+    vx = -Math.abs(vx) * WALL_RESTITUTION;
+  }
+
+  // Peg collisions
+  const minDist = BALL_RADIUS + PEG_RADIUS;
+  for (const peg of pegs) {
+    const dx = x - peg.x;
+    const dy = y - peg.y;
+    const distSq = dx * dx + dy * dy;
+    if (distSq < minDist * minDist && distSq > 0) {
+      const dist = Math.sqrt(distSq);
+      const nx = dx / dist;
+      const ny = dy / dist;
+      // Push ball outside peg
+      x = peg.x + nx * minDist;
+      y = peg.y + ny * minDist;
+      // Reflect velocity along collision normal
+      const dot = vx * nx + vy * ny;
+      if (dot < 0) { // only resolve if moving toward peg
+        vx -= (1 + RESTITUTION) * dot * nx;
+        vy -= (1 + RESTITUTION) * dot * ny;
+      }
+    }
+  }
+
+  return { x, y, vx, vy };
+}
+
+/**
+ * Returns true when the ball has descended far enough into the slot row
+ * to be considered settled.
+ *
+ * @param {number} ballY    - ball center y
+ * @param {number} slotTop  - y coordinate of the top of the slot row
+ * @param {number} threshold - how far below slotTop counts as settled (px)
+ */
+export function detectSlotEntry(ballY, slotTop, threshold = SLOT_HEIGHT * 0.5) {
+  return ballY > slotTop + threshold;
 }
 
 // ── Board layout ──────────────────────────────────────────────────────────────
@@ -265,3 +351,111 @@ export function dropBall(canvas, slotLabels, colorKeys = slotLabels, onLand) {
   rafId = requestAnimationFrame(frame);
   return () => cancelAnimationFrame(rafId);
 }
+
+// ── Physics ball animation ────────────────────────────────────────────────────
+
+/**
+ * Animate a physics-driven ball drop on `canvas`.
+ * The winner is determined by which slot the ball physically settles into.
+ * Same signature as dropBall — returns a cancel function.
+ */
+export function dropBallPhysics(canvas, slotLabels, colorKeys = slotLabels, onLand) {
+  const ctx = canvas.getContext('2d');
+  const layout = computeLayout(canvas.width, canvas.height, slotLabels.length);
+  const { pegs, slots, boardX, boardY, boardW } = layout;
+
+  const slotW   = boardW / slotLabels.length;
+  const wallLeft  = boardX;
+  const wallRight = boardX + boardW;
+  const slotTop   = slots[0].y;
+
+  // Slot-divider x positions (internal walls between slots)
+  const dividers = [];
+  for (let i = 1; i < slotLabels.length; i++) {
+    dividers.push(boardX + i * slotW);
+  }
+
+  // Initial ball state: top-center with a small random horizontal nudge
+  const initX = boardX + boardW / 2 + (Math.random() - 0.5) * slotW * 0.5;
+  let ball = createBallState(initX, boardY - BALL_RADIUS, (Math.random() - 0.5) * 0.05, 0);
+
+  let rafId;
+  let prevTs = null;
+  let startTs = null;
+  let settled = false;
+
+  function drawBall(bx, by) {
+    ctx.beginPath();
+    ctx.arc(bx, by, BALL_RADIUS, 0, Math.PI * 2);
+    ctx.fillStyle = '#e94560';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(bx - 3, by - 3, BALL_RADIUS * 0.35, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.fill();
+  }
+
+  function resolveSlotWalls(b) {
+    // Only apply slot-divider collisions once ball is in the slot zone
+    if (b.y < slotTop) return b;
+    let { x, y, vx, vy } = b;
+    for (const dx of dividers) {
+      const dist = Math.abs(x - dx);
+      if (dist < BALL_RADIUS) {
+        // Push ball away from divider
+        x = x < dx ? dx - BALL_RADIUS : dx + BALL_RADIUS;
+        vx = (x < dx ? -1 : 1) * Math.abs(vx) * WALL_RESTITUTION;
+      }
+    }
+    return { x, y, vx, vy };
+  }
+
+  function winnerIdx(bx) {
+    const idx = Math.floor((bx - boardX) / slotW);
+    return Math.max(0, Math.min(slotLabels.length - 1, idx));
+  }
+
+  function settle(bx) {
+    settled = true;
+    const winner = winnerIdx(bx);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawPegs(ctx, pegs);
+    drawSlots(ctx, slots, slotLabels, winner, colorKeys);
+    onLand(slotLabels[winner]);
+  }
+
+  function frame(ts) {
+    if (startTs === null) startTs = ts;
+    if (prevTs === null) prevTs = ts;
+
+    const elapsed = ts - startTs;
+    const dt = Math.min(ts - prevTs, 32); // cap dt to avoid spiral of death
+    prevTs = ts;
+
+    // Advance physics
+    ball = stepBall(ball, pegs, wallLeft, wallRight, dt);
+    ball = resolveSlotWalls(ball);
+
+    // Check settlement
+    if (detectSlotEntry(ball.y, slotTop) || elapsed > PHYSICS_MAX_MS) {
+      settle(ball.x);
+      return;
+    }
+
+    // Determine which slot is highlighted (only once ball is in slot zone)
+    const highlightSlot = ball.y > slotTop ? winnerIdx(ball.x) : -1;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawPegs(ctx, pegs);
+    drawSlots(ctx, slots, slotLabels, highlightSlot, colorKeys);
+    drawBall(ball.x, ball.y);
+
+    if (!settled) {
+      rafId = requestAnimationFrame(frame);
+    }
+  }
+
+  rafId = requestAnimationFrame(frame);
+  return () => { settled = true; cancelAnimationFrame(rafId); };
+}
+
